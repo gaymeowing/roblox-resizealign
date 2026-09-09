@@ -13,6 +13,28 @@ return function(t: TestContext)
 		t.expect(settings.WindowAnchor ~= nil).toBe(true)
 	end)
 
+	t.test("ArcJoin options default and round-trip independently", function()
+		local settings = Settings.Load(t.plugin)
+		local saved = table.clone(settings.ArcJoin)
+		t.expect(settings.ArcJoin.AutomaticSegments).toBe(true)
+		t.expect(settings.ArcJoin.Padding).toBe(0)
+		settings.ArcJoin = {
+			AutomaticSegments = false,
+			Segments = 24,
+			Padding = 0.5,
+			AdvancedPadding = true,
+			PaddingA = 1,
+			PaddingB = 2,
+		}
+		Settings.Save(t.plugin, settings)
+		local reloaded = Settings.Load(t.plugin)
+		t.expect(reloaded.ArcJoin).toEqual(settings.ArcJoin)
+		reloaded.ArcJoin.Padding = 3
+		t.expect(settings.ArcJoin.Padding).toBe(0.5)
+		settings.ArcJoin = saved
+		Settings.Save(t.plugin, settings)
+	end)
+
 	t.test("Save and Load round-trips", function()
 		local settings = Settings.Load(t.plugin)
 		settings.ResizeMode = "ButtJoint"
@@ -56,7 +78,16 @@ return function(t: TestContext)
 	end)
 
 	t.test("All resize modes round-trip", function()
-		local modes = {"OuterTouch", "InnerTouch", "WedgeJoin", "RoundedJoin", "ButtJoint", "ExtendUpTo", "ExtendInto"}
+		local modes = {
+			"OuterTouch",
+			"InnerTouch",
+			"WedgeJoin",
+			"RoundedJoin",
+			"ArcJoin",
+			"ButtJoint",
+			"ExtendUpTo",
+			"ExtendInto",
+		}
 		for _, mode in modes do
 			local settings = Settings.Load(t.plugin)
 			settings.ResizeMode = mode
@@ -73,7 +104,7 @@ return function(t: TestContext)
 	end)
 
 	t.test("All threshold values round-trip", function()
-		local thresholds = {"25", "15", "Exact"}
+		local thresholds = { "25", "15", "Exact" }
 		for _, threshold in thresholds do
 			local settings = Settings.Load(t.plugin)
 			settings.SelectionThreshold = threshold

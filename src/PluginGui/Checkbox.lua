@@ -27,18 +27,21 @@ local function Checkbox(props: {
 
 	return e("Frame", {
 		Size = UDim2.new(1, 0, 0, HEIGHT),
+		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
 		LayoutOrder = props.LayoutOrder,
 	}, {
 		ListLayout = e("UIListLayout", {
 			FillDirection = Enum.FillDirection.Horizontal,
 			HorizontalAlignment = Enum.HorizontalAlignment.Left,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			Padding = UDim.new(0, 6),
 		}),
 		Label = e("TextButton", {
-			Size = UDim2.new(0, 0, 0, HEIGHT),
-			AutomaticSize = Enum.AutomaticSize.X,
+			Size = UDim2.new(1, -(HEIGHT + 6), 0, HEIGHT),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			TextWrapped = true,
 			Text = props.Label,
 			TextColor3 = Colors.WHITE,
 			AutoButtonColor = false,

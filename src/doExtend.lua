@@ -15,7 +15,6 @@ local ShapeUtils = require(Src.ShapeUtils)
 local otherNormals = ShapeUtils.otherNormals
 local isWedgeShape = ShapeUtils.isWedgeShape
 local isCornerWedgeShape = ShapeUtils.isCornerWedgeShape
-local isCylinder = ShapeUtils.isCylinder
 
 export type Face = {
 	Object: BasePart,
@@ -41,7 +40,7 @@ local kNearParallelSinAngle = 0.01
 
 -- Bounds on how far a part may be extended to meet the true intersection of
 -- two nearly parallel faces before falling back to the parallel behavior:
--- an absolute bound of the Roblox max part size (larger isn't buildable), and
+-- an Vector3.Abs bound of the Roblox max part size (larger isn't buildable), and
 -- a relative bound of a multiple of the size of the geometry being operated
 -- on (an intersection many times further away than the parts are large is not
 -- what the user was aiming for).
@@ -84,25 +83,25 @@ local function getFacePoints(face: Face)
 	elseif face.IsWedge then
 		-- Slope face corners: top-back edge to bottom-front edge
 		return {
-			cf:PointToWorldSpace(Vector3.new( hsize.X,  hsize.Y,  hsize.Z)),
-			cf:PointToWorldSpace(Vector3.new(-hsize.X,  hsize.Y,  hsize.Z)),
-			cf:PointToWorldSpace(Vector3.new( hsize.X, -hsize.Y, -hsize.Z)),
+			cf:PointToWorldSpace(Vector3.new(hsize.X, hsize.Y, hsize.Z)),
+			cf:PointToWorldSpace(Vector3.new(-hsize.X, hsize.Y, hsize.Z)),
+			cf:PointToWorldSpace(Vector3.new(hsize.X, -hsize.Y, -hsize.Z)),
 			cf:PointToWorldSpace(Vector3.new(-hsize.X, -hsize.Y, -hsize.Z)),
 		}
 	else
 		local faceDir = Vector3.fromNormalId(face.Normal)
 		local faceA, faceB = otherNormals(faceDir)
-		faceDir, faceA, faceB = faceDir*hsize, faceA*hsize, faceB*hsize
+		faceDir, faceA, faceB = faceDir * hsize, faceA * hsize, faceB * hsize
 		return {
-			cf:PointToWorldSpace(faceDir + faceA + faceB);
-			cf:PointToWorldSpace(faceDir + faceA - faceB);
-			cf:PointToWorldSpace(faceDir - faceA - faceB);
-			cf:PointToWorldSpace(faceDir - faceA + faceB);
+			cf:PointToWorldSpace(faceDir + faceA + faceB),
+			cf:PointToWorldSpace(faceDir + faceA - faceB),
+			cf:PointToWorldSpace(faceDir - faceA - faceB),
+			cf:PointToWorldSpace(faceDir - faceA + faceB),
 		}
 	end
 end
 
-local function getPoints(part: BasePart): {Vector3}
+local function getPoints(part: BasePart): { Vector3 }
 	local hsize = part.Size / 2
 	local cf = part.CFrame
 	local points = {}
@@ -164,7 +163,7 @@ local function getBasis(face: Face)
 	end
 end
 
-local function getPositivePointToFace(face: Face, points: {Vector3}): Vector3
+local function getPositivePointToFace(face: Face, points: { Vector3 }): Vector3
 	local basePoint, normal = getBasis(face)
 	local maxDist = -math.huge
 	local maxPoint = nil
@@ -178,7 +177,7 @@ local function getPositivePointToFace(face: Face, points: {Vector3}): Vector3
 	return maxPoint
 end
 
-local function getNegativePointToFace(face: Face, points: {Vector3}): Vector3
+local function getNegativePointToFace(face: Face, points: { Vector3 }): Vector3
 	local basePoint, normal = getBasis(face)
 	local minDist = math.huge
 	local minPoint = nil
@@ -229,11 +228,7 @@ local function resizePart(face: Face, delta: number)
 		local wedge = Instance.new("WedgePart")
 		copyPartProps(face.Object, wedge)
 		wedge.Size = Vector3.new(delta, legUpLen, legAlongLen)
-		wedge.CFrame = CFrame.fromMatrix(
-			face.Object.Position + normal * (delta / 2),
-			normal,
-			legUpDir
-		)
+		wedge.CFrame = CFrame.fromMatrix(face.Object.Position + normal * (delta / 2), normal, legUpDir)
 		wedge.Parent = face.Object.Parent
 		wedge.Name = face.Object.Name .. "_Extended"
 	elseif face.IsWedge then
@@ -245,12 +240,12 @@ local function resizePart(face: Face, delta: number)
 		copyPartProps(face.Object, part)
 		part.CFrame = CFrame.fromMatrix(point + normal * 0.5 * delta, face.Object.CFrame.XVector, normal)
 		local size = face.Object.Size
-		part.Size = Vector3.new(size.X, delta, math.sqrt(size.Y^2 + size.Z^2))
+		part.Size = Vector3.new(size.X, delta, math.sqrt(size.Y ^ 2 + size.Z ^ 2))
 		part.Parent = face.Object.Parent
-		part.Name = face.Object.Name.."_Extended"
+		part.Name = face.Object.Name .. "_Extended"
 	else
 		local joiner = JointMaker.new(false)
-		joiner:pickUpParts({face.Object})
+		joiner:pickUpParts({ face.Object })
 		joiner:breakJointsToOutsiders()
 
 		local axis = Vector3.fromNormalId(face.Normal)
@@ -262,39 +257,6 @@ local function resizePart(face: Face, delta: number)
 		end
 		joiner:putDownParts()
 	end
-end
-
-local function fillJoint(faceA: Face, faceB: Face, fillPoint: Vector3, fillAxis: Vector3, pointsA: {Vector3}, pointsB: {Vector3}, offsetA: Vector3, offsetB: Vector3)
-	local maxProj = -math.huge
-	local minProj = math.huge
-	local maxRadius = -math.huge
-	for _, point in pointsA do
-		local modPoint = point + offsetA
-		local proj = (modPoint - fillPoint):Dot(fillAxis)
-		maxProj = math.max(maxProj, proj)
-		minProj = math.min(minProj, proj)
-		local toAxis = (modPoint - (fillPoint + fillAxis * proj)).Magnitude
-		maxRadius = math.max(maxRadius, toAxis)
-	end
-	for _, point in pointsB do
-		local modPoint = point + offsetB
-		local proj = (modPoint - fillPoint):Dot(fillAxis)
-		maxProj = math.max(maxProj, proj)
-		minProj = math.min(minProj, proj)
-	end
-	local centerPoint = fillPoint + fillAxis * (0.5 * (minProj + maxProj))
-	local length = (maxProj - minProj)
-	local radius = maxRadius
-	local cyl = Instance.new("Part")
-	copyPartProps(faceB.Object, cyl)
-	if isCylinder(faceA.Object) and isCylinder(faceB.Object) then
-		cyl.Shape = Enum.PartType.Ball
-	else
-		cyl.Shape = Enum.PartType.Cylinder
-	end
-	cyl.Size = Vector3.new(length, 2 * radius, 2 * radius)
-	cyl.CFrame = CFrame.fromMatrix(centerPoint, fillAxis, getNormal(faceB))
-	cyl.Parent = faceB.Object.Parent
 end
 
 local function fillAcuteGap(face: Face, dirSelf: Vector3, dirOther: Vector3, crossAxis: Vector3, extraLen: number)
@@ -336,15 +298,193 @@ local function fillAcuteGap(face: Face, dirSelf: Vector3, dirOther: Vector3, cro
 	local wedge = Instance.new("WedgePart")
 	copyPartProps(face.Object, wedge)
 	wedge.Size = Vector3.new(2 * crossHalf, extraLen, 2 * perpHalf)
-	wedge.CFrame = CFrame.fromMatrix(
-		facePoint + dirSelf * extraLen / 2,
-		dirSelf:Cross(outerDir),
-		dirSelf
-	)
+	wedge.CFrame = CFrame.fromMatrix(facePoint + dirSelf * extraLen / 2, dirSelf:Cross(outerDir), dirSelf)
 	wedge.Parent = face.Object.Parent
 end
 
-local function doExtend(faceA: Face, faceB: Face, resizeMode: ResizeMode, acuteWedgeJoin: boolean?)
+local function getArcExtension(template: BasePart, face: Face, segment: ShapeUtils.ArcSegment): number?
+	local part = face.Object
+	if
+		not template:IsA("Part")
+		or template.Shape ~= Enum.PartType.Block
+		or not part:IsA("Part")
+		or part.Shape ~= Enum.PartType.Block
+		or #template:GetChildren() > 0
+		or #part:GetChildren() > 0
+	then
+		return nil
+	end
+	if template ~= part then
+		if
+			template.Color ~= part.Color
+			or template.Material ~= part.Material
+			or template.MaterialVariant ~= part.MaterialVariant
+			or template.Transparency ~= part.Transparency
+			or template.Reflectance ~= part.Reflectance
+			or template.CastShadow ~= part.CastShadow
+			or template.Anchored ~= part.Anchored
+			or template.Massless ~= part.Massless
+			or template.RootPriority ~= part.RootPriority
+			or template.CustomPhysicalProperties ~= part.CustomPhysicalProperties
+			or template.CanCollide ~= part.CanCollide
+			or template.CanTouch ~= part.CanTouch
+			or template.CanQuery ~= part.CanQuery
+			or template.CollisionGroup ~= part.CollisionGroup
+			or template.TopSurface ~= part.TopSurface
+			or template.BottomSurface ~= part.BottomSurface
+			or template.LeftSurface ~= part.LeftSurface
+			or template.RightSurface ~= part.RightSurface
+			or template.FrontSurface ~= part.FrontSurface
+			or template.BackSurface ~= part.BackSurface
+		then
+			return nil
+		end
+		local a, b = template:GetAttributes(), part:GetAttributes()
+		for key, value in a do
+			if b[key] ~= value then
+				return nil
+			end
+		end
+		for key, value in b do
+			if a[key] ~= value then
+				return nil
+			end
+		end
+		local tagsA, tagsB = template:GetTags(), part:GetTags()
+		if #tagsA ~= #tagsB then
+			return nil
+		end
+		for _, tag in tagsA do
+			if not part:HasTag(tag) then
+				return nil
+			end
+		end
+	end
+	local dimension = getDimension(face)
+	local cross = Vector3.one - dimension
+	local relative = part.CFrame:ToObjectSpace(segment.CFrame)
+
+	local projectedSize = relative.XVector:Abs() * segment.Size.X
+		+ relative.YVector:Abs() * segment.Size.Y
+		+ relative.ZVector:Abs() * segment.Size.Z
+	if ((projectedSize - part.Size) * cross).Magnitude > 0.0001 or (relative.Position * cross).Magnitude > 0.0001 then
+		return nil
+	end
+	local point, normal = getBasis(face)
+	local extension = (segment.CFrame.Position - point):Dot(normal) + projectedSize:Dot(dimension) / 2
+	local length = part.Size:Dot(dimension) + extension
+	return if length >= 0.001 and length <= 2048 then extension else nil
+end
+
+local function createArcJoin(
+	faceA: Face,
+	faceB: Face,
+	paddingA: number,
+	paddingB: number,
+	segmentCount: number?,
+	allowShrink: boolean?
+)
+	if faceA.Object == faceB.Object then
+		return
+	end
+	if isExtrusionFace(faceA) or isExtrusionFace(faceB) then
+		error("Arc Join: select an end face, rather than a sloped wedge face.")
+	end
+	if
+		not math.isfinite(paddingA)
+		or not math.isfinite(paddingB)
+		or (not allowShrink and (paddingA < 0 or paddingB < 0))
+	then
+		error("Arc Join: padding must be a finite, non-negative number.")
+	end
+	local pointA, normalA = getBasis(faceA)
+	local pointB, normalB = getBasis(faceB)
+	local startPoint = pointA + normalA * paddingA
+	local startFrame = CFrame.new(startPoint) * faceA.Object.CFrame.Rotation
+	local endPoint = ShapeUtils.getArcTargetPoint(
+		startFrame,
+		CFrame.new(pointB + normalB * paddingB) * faceB.Object.CFrame.Rotation,
+		faceA.Object.Size,
+		faceB.Object.Size,
+		Vector3.fromNormalId(faceA.Normal),
+		Vector3.fromNormalId(faceB.Normal)
+	)
+	if not allowShrink and (endPoint - startPoint):Dot(pointB - pointA) <= 0 then
+		error("Arc Join: padding leaves no room for the arc.")
+	end
+	local sizeA = faceA.Object.Size + getDimension(faceA) * paddingA
+	local sizeB = faceB.Object.Size + getDimension(faceB) * paddingB
+	if math.max(sizeA.X, sizeA.Y, sizeA.Z, sizeB.X, sizeB.Y, sizeB.Z) > 2048 then
+		error("Arc Join: padding exceeds the maximum part size.")
+	end
+	local segments = ShapeUtils.planArcJoin(
+		startFrame,
+		endPoint,
+		normalB,
+		faceA.Object.Size,
+		Vector3.fromNormalId(faceA.Normal),
+		segmentCount
+	)
+	if not segments then
+		error("Arc Join: the segment count or resulting segment sizes cannot form a join.")
+	end
+
+	local first, last = 1, #segments
+	local extensionA = getArcExtension(faceA.Object, faceA, segments[first])
+	if extensionA then
+		paddingA = extensionA
+		first += 1
+	end
+	if first <= last then
+		local extensionB = getArcExtension(faceA.Object, faceB, segments[last])
+		if extensionB then
+			paddingB = extensionB
+			last -= 1
+		end
+	end
+	-- Clone before padding changes the template, then parent the staged clones
+	-- together with the source resizes in one undo recording.
+	local clones: { BasePart } = {}
+	for i = first, last do
+		local segment = segments[i]
+		local clone = faceA.Object:Clone()
+		clone.Size = segment.Size
+		clone.CFrame = segment.CFrame
+		table.insert(clones, clone)
+	end
+	local recording = ChangeHistoryService:TryBeginRecording("ResizeAlign")
+	if paddingA ~= 0 then
+		resizePart(faceA, paddingA)
+	end
+	if paddingB ~= 0 then
+		resizePart(faceB, paddingB)
+	end
+	for _, clone in clones do
+		clone.Parent = faceA.Object.Parent
+	end
+	if recording then
+		ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
+	end
+end
+
+local function doExtend(
+	faceA: Face,
+	faceB: Face,
+	resizeMode: ResizeMode,
+	acuteWedgeJoin: boolean?,
+	arcOptions: Settings.ArcJoinOptions?
+)
+	if resizeMode == "ArcJoin" then
+		local options = arcOptions or Settings.DefaultArcJoinOptions
+		createArcJoin(
+			faceA,
+			faceB,
+			if options.AdvancedPadding then options.PaddingA else options.Padding,
+			if options.AdvancedPadding then options.PaddingB else options.Padding,
+			if options.AutomaticSegments then nil else options.Segments
+		)
+		return
+	end
 	local pointsA = getFacePoints(faceA)
 	local pointsB = getFacePoints(faceB)
 	local localDimensionA = getDimension(faceA)
@@ -396,8 +536,14 @@ local function doExtend(faceA: Face, faceB: Face, resizeMode: ResizeMode, acuteW
 		return
 	end
 
-	local extendPointA, extendPointB;
-	if resizeMode == "ExtendInto" or resizeMode == "OuterTouch" or resizeMode == "WedgeJoin" or resizeMode == "ButtJoint" then
+	local extendPointA, extendPointB
+	local roundedRadius: number? = nil
+	if
+		resizeMode == "ExtendInto"
+		or resizeMode == "OuterTouch"
+		or resizeMode == "WedgeJoin"
+		or resizeMode == "ButtJoint"
+	then
 		extendPointA = getPositivePointToFace(faceB, pointsA)
 		extendPointB = getPositivePointToFace(faceA, pointsB)
 	elseif resizeMode == "ExtendUpTo" or resizeMode == "InnerTouch" then
@@ -411,6 +557,7 @@ local function doExtend(faceA: Face, faceB: Face, resizeMode: ResizeMode, acuteW
 			local projPoint = extendPointA + fillAxis * (point - extendPointA):Dot(fillAxis)
 			radiusA = math.max(radiusA, (point - projPoint).Magnitude)
 		end
+		roundedRadius = radiusA
 		local centerPointB = getBasis(faceB)
 		extendPointB = getPositivePointToFace(faceA, pointsB)
 		local proj = (extendPointB - centerPointB):Dot(fillAxis)
@@ -473,7 +620,7 @@ local function doExtend(faceA: Face, faceB: Face, resizeMode: ResizeMode, acuteW
 	if resizeMode == "ExtendInto" or resizeMode == "ExtendUpTo" then
 		local denom2 = dirA:Dot(dirB)
 		if math.abs(denom2) > 0.0001 and not isExtrusionFace(faceA) then
-			lenA = - (extendPointA - extendPointB):Dot(dirB) / denom2
+			lenA = -(extendPointA - extendPointB):Dot(dirB) / denom2
 			lenB = 0
 		else
 			local points = getPoints(faceB.Object)
@@ -524,6 +671,20 @@ local function doExtend(faceA: Face, faceB: Face, resizeMode: ResizeMode, acuteW
 		end
 	end
 
+	if roundedRadius then
+		-- Preserve Rounded Join's original intersection and filler radius.
+		-- For a fillet of radius R, the tangent points sit R*tan(turn/2)
+		-- back from that intersection along each of the two source parts.
+		local turn = math.acos(math.clamp(-dirA:Dot(dirB), -1, 1))
+		local setback = roundedRadius * math.tan(turn / 2)
+		local paddingA, paddingB = lenA - setback, lenB - setback
+		if paddingA <= -extendableA + 0.001 or paddingB <= -extendableB + 0.001 then
+			return
+		end
+		createArcJoin(faceA, faceB, paddingA, paddingB, nil, true)
+		return
+	end
+
 	local recording = ChangeHistoryService:TryBeginRecording("ResizeAlign")
 
 	resizePart(faceA, lenA)
@@ -539,19 +700,18 @@ local function doExtend(faceA: Face, faceB: Face, resizeMode: ResizeMode, acuteW
 		end
 	end
 
-	if resizeMode == "RoundedJoin" then
-		local fillAxis = dirA:Cross(dirB).Unit
-		fillJoint(faceA, faceB, extendPointA + dirA * lenA, fillAxis, pointsA, pointsB, dirA * lenA, dirB * lenB)
-	end
-
 	if resizeMode == "ButtJoint" then
 		local points = getFacePoints(faceB)
-		local minV =  math.huge
+		local minV = math.huge
 		local maxV = -math.huge
 		for _, v in points do
 			local proj = (v - extendPointA):Dot(dirA)
-			if proj < minV then minV = proj end
-			if proj > maxV then maxV = proj end
+			if proj < minV then
+				minV = proj
+			end
+			if proj > maxV then
+				maxV = proj
+			end
 		end
 		resizePart(faceA, -(maxV - minV))
 	end

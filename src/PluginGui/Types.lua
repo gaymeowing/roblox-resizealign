@@ -28,6 +28,8 @@ export type PluginGuiConfig = {
 }
 
 export type PluginGuiState = {
+	ScrollTarget: GuiObject?,
+	ScrollEndTarget: GuiObject?,
 	Mode: PluginGuiMode,
 	Settings: PluginGuiSettings,
 	UpdatedSettings: () -> (),

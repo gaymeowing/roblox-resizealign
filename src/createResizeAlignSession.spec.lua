@@ -12,6 +12,7 @@ local function makeTestSettings()
 		HaveHelp = false,
 		ResizeMode = "OuterTouch",
 		AcuteWedgeJoin = true,
+		ArcJoin = table.clone(require(script.Parent.Settings).DefaultArcJoinOptions),
 		SelectionThreshold = "25",
 		ClassicUI = false,
 	}

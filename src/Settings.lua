@@ -4,18 +4,43 @@ local kSettingsKey = "resizeAlignState"
 
 local PluginGuiTypes = require("./PluginGui/Types")
 
-export type ResizeMode = "OuterTouch" | "InnerTouch" | "WedgeJoin" | "RoundedJoin" | "ButtJoint" | "ExtendUpTo" | "ExtendInto"
+export type ResizeMode = "OuterTouch" | "InnerTouch" | "WedgeJoin" | "RoundedJoin" | "ArcJoin" | "ButtJoint" | "ExtendUpTo" | "ExtendInto"
+export type ArcJoinOptions = {
+	AutomaticSegments: boolean,
+	Segments: number,
+	Padding: number,
+	AdvancedPadding: boolean,
+	PaddingA: number,
+	PaddingB: number,
+}
+
+local DEFAULT_ARC_JOIN_OPTIONS: ArcJoinOptions = {
+	AutomaticSegments = true,
+	Segments = 12,
+	Padding = 0,
+	AdvancedPadding = false,
+	PaddingA = 0,
+	PaddingB = 0,
+}
+
 export type SelectionThreshold = "25" | "15" | "Exact"
 
 export type ResizeAlignSettings = PluginGuiTypes.PluginGuiSettings & {
 	ResizeMode: ResizeMode,
 	AcuteWedgeJoin: boolean,
+	ArcJoin: ArcJoinOptions,
 	SelectionThreshold: SelectionThreshold,
 	ClassicUI: boolean,
 }
 
 local function loadSettings(plugin: Plugin): ResizeAlignSettings
 	local raw = plugin:GetSetting(kSettingsKey) or {}
+	local arcJoin = raw.ArcJoin or {}
+	for key, default in DEFAULT_ARC_JOIN_OPTIONS do
+		if arcJoin[key] == nil then
+			arcJoin[key] = default
+		end
+	end
 	return {
 		WindowPosition = Vector2.new(
 			raw.WindowPositionX or InitialPosition.X,
@@ -31,6 +56,7 @@ local function loadSettings(plugin: Plugin): ResizeAlignSettings
 
 		----
 
+		ArcJoin = arcJoin,
 		ResizeMode = if raw.ResizeMode ~= nil then raw.ResizeMode else "OuterTouch",
 		AcuteWedgeJoin = if raw.AcuteWedgeJoin ~= nil then raw.AcuteWedgeJoin else true,
 		SelectionThreshold = if raw.SelectionThreshold ~= nil then raw.SelectionThreshold else "25",
@@ -50,6 +76,7 @@ local function saveSettings(plugin: Plugin, settings: ResizeAlignSettings)
 		----
 
 		ResizeMode = settings.ResizeMode,
+		ArcJoin = settings.ArcJoin,
 		AcuteWedgeJoin = settings.AcuteWedgeJoin,
 		SelectionThreshold = settings.SelectionThreshold,
 		ClassicUI = settings.ClassicUI,
@@ -57,6 +84,7 @@ local function saveSettings(plugin: Plugin, settings: ResizeAlignSettings)
 end
 
 return {
+	DefaultArcJoinOptions = DEFAULT_ARC_JOIN_OPTIONS,
 	Load = loadSettings,
 	Save = saveSettings,
 }

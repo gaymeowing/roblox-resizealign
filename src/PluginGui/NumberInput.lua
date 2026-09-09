@@ -32,18 +32,16 @@ local function NumberInput(props: {
 	LayoutOrder: number?,
 	ChipColor: Color3?,
 	Grow: boolean?,
+	EmptyAsZero: boolean?,
 })
 	local hasFocus, setHasFocus = React.useState(false)
 
-	local displayText = string.format('<b>%g</b><font size="14">%s</font>', props.Value, if props.Unit then props.Unit else "")
+	local valueText = string.format("%g", props.Value)
+	local displayText =
+		string.format('<b>%s</b><font size="14">%s</font>', valueText, if props.Unit then props.Unit else "")
 
 	local textBoxRef = React.useRef(nil)
-	local numberPartLength = TextService:GetTextSize(
-		string.format("%g", props.Value),
-		20,
-		Enum.Font.RobotoMono,
-		Vector2.new(1000, 1000)
-	).X
+	local numberPartLength = TextService:GetTextSize(valueText, 20, Enum.Font.RobotoMono, Vector2.new(1000, 1000)).X
 	local unitPartLength = TextService:GetTextSize(
 		if props.Unit then props.Unit else "",
 		14,
@@ -51,11 +49,10 @@ local function NumberInput(props: {
 		Vector2.new(1000, 1000)
 	).X
 	local displayTextSize = numberPartLength + unitPartLength
-	local textFitsAtNormalSize = not textBoxRef.current or
-		textBoxRef.current.AbsoluteSize.X >= displayTextSize + 4
+	local textFitsAtNormalSize = not textBoxRef.current or textBoxRef.current.AbsoluteSize.X >= displayTextSize + 4
 
 	local onFocusLost = React.useCallback(function(object: TextBox, enterPressed: boolean)
-		local newValue = InterpretValue(object.Text)
+		local newValue = if props.EmptyAsZero and object.Text:match("^%s*$") then 0 else InterpretValue(object.Text)
 		if newValue then
 			newValue = props.ValueEntered(newValue)
 			-- If the value didn't change we need to revert because we won't get rerendered
@@ -67,11 +64,14 @@ local function NumberInput(props: {
 			object.Text = displayText
 		end
 		setHasFocus(false)
-	end, { props.ValueEntered, displayText } :: {any})
+	end, { props.ValueEntered, displayText, props.EmptyAsZero } :: { any })
 
 	local onFocused = React.useCallback(function(object: TextBox)
+		object.Text = tostring(props.Value)
+		object.CursorPosition = #object.Text + 1
+		object.SelectionStart = -1
 		setHasFocus(true)
-	end, {})
+	end, { props.Value })
 
 	return e("Frame", {
 		Size = if props.Grow then UDim2.new() else UDim2.new(1, 0, 0, 0),
@@ -102,6 +102,7 @@ local function NumberInput(props: {
 			Text = textFitsAtNormalSize and displayText or " " .. displayText,
 			TextColor3 = Colors.WHITE,
 			RichText = true,
+			ClearTextOnFocus = false,
 			BackgroundColor3 = Colors.GREY,
 			Size = UDim2.new(0, 0, 0, 24),
 			Font = Enum.Font.RobotoMono,
@@ -110,6 +111,13 @@ local function NumberInput(props: {
 			LayoutOrder = 2,
 			[React.Event.Focused] = onFocused,
 			[React.Event.FocusLost] = onFocusLost :: any,
+			[React.Change.Text] = function(object: TextBox)
+				if props.EmptyAsZero and object:IsFocused() and object.Text:match("^%s*$") then
+					object.Text = "0"
+					object.CursorPosition = 2
+					object.SelectionStart = 1
+				end
+			end,
 			ref = textBoxRef,
 		}, {
 			Corner = e("UICorner", {
