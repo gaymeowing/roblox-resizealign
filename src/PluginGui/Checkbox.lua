@@ -26,7 +26,7 @@ local function Checkbox(props: {
 	end
 
 	return e("Frame", {
-		Size = UDim2.new(1, 0, 0, HEIGHT),
+		Size = UDim2.fromScale(1, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
 		LayoutOrder = props.LayoutOrder,
@@ -39,7 +39,7 @@ local function Checkbox(props: {
 			Padding = UDim.new(0, 6),
 		}),
 		Label = e("TextButton", {
-			Size = UDim2.new(1, -(HEIGHT + 6), 0, HEIGHT),
+			Size = UDim2.fromOffset(0, HEIGHT),
 			AutomaticSize = Enum.AutomaticSize.Y,
 			TextWrapped = true,
 			Text = props.Label,
@@ -59,6 +59,10 @@ local function Checkbox(props: {
 			[React.Event.MouseLeave] = function()
 				setLabelHovered(false)
 			end,
+		}, {
+			Flex = e("UIFlexItem", {
+				FlexMode = Enum.UIFlexMode.Grow,
+			}),
 		}),
 		CheckBox = e("TextButton", {
 			Size = UDim2.new(0, HEIGHT, 0, HEIGHT),

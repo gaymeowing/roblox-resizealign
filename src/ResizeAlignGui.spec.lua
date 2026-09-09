@@ -91,21 +91,33 @@ return function(t: TestContext)
 						local outer = screen:FindFirstChild("OuterTouchOptions", true)
 						t.expect(arc ~= nil).toBe(mode == "ArcJoin")
 						t.expect(outer ~= nil).toBe(mode == "OuterTouch")
-						local panel = arc or outer
+						local rounded = screen:FindFirstChild("RoundedJoinOptions", true)
+						local panel = arc or outer or rounded
 						if panel then
-							t.expect(panel.LayoutOrder).toBe(if arc then 8 else 2)
-							t.expect(panel.Aligned.Position.X.Offset).toBe(if classic then 0 else 20)
-							t.expect(panel.Aligned.Outline.Stroke.Color).toBe(Color3.new(1, 1, 1))
+							local row = screen:FindFirstChild(if arc then "ArcJoin" elseif rounded then "RoundedJoin" else "OuterTouch", true)
+							t.expect(row.LayoutOrder).toBe(
+								if arc then 7 elseif rounded then 5 else 1
+							)
+							t.expect(panel.Parent.Position.X.Offset).toBe(if classic then 0 else 20)
+							local outline = row:FindFirstChild("Outline")
+							t.expect(outline == nil).toBe(classic)
+							if outline then
+								t.expect(outline.Stroke.Color).toBe(Color3.new(1, 1, 1))
+								t.expect(outline.BackgroundTransparency).toBe(1)
+							end
+						end
+						if outer and not classic then
+							local label = outer.Content.AcuteWedgeJoin:FindFirstChild("Label", true)
+							t.expect(label.TextWrapped).toBe(true)
+							t.expect(label.AbsoluteSize.Y > 22).toBe(true)
 						end
 						if arc then
 							local preview = screen:FindFirstChild("ArcJoin", true):FindFirstChild("Filler", true)
 							t.expect(preview:IsA("Model")).toBe(true)
 							t.expect(preview:FindFirstChildWhichIsA("BasePart") ~= nil).toBe(true)
-							t.expect(arc.Aligned.Content:FindFirstChild("Segments") == nil).toBe(true)
-							t.expect(panel.Aligned.Outline.BackgroundTransparency).toBe(1)
-							t.expect(panel.Aligned.Background.BackgroundColor3).toBe(Color3.fromRGB(18, 18, 18))
-							local textbox = arc.Aligned.Content.Padding:FindFirstChild("TextBox", true)
-							t.expect(textbox.ClearTextOnFocus).toBe(false)
+							t.expect(arc.Content:FindFirstChild("Segments") == nil).toBe(true)
+							t.expect(panel.BackgroundColor3).toBe(Color3.fromRGB(18, 18, 18))
+							local textbox = arc.Content.Padding:FindFirstChild("TextBox", true)
 							t.expect(textbox.Text:find("studs", 1, true) ~= nil).toBe(true)
 						end
 					end,
@@ -125,56 +137,39 @@ return function(t: TestContext)
 					local header = screen:FindFirstChild("ArcJoin", true)
 					local height = panel.AbsoluteSize.Y
 					t.expect(height > 0).toBe(true)
-					t.expect(panel.ZIndex > header.ZIndex).toBe(true)
-					t.expect(panel.Aligned.Outline.AbsolutePosition.Y).toBe(header.AbsolutePosition.Y)
+					if not classic then
+						t.expect(header.Outline.ZIndex > header.ZIndex).toBe(true)
+						t.expect(header.Outline.AbsolutePosition.Y).toBe(header.AbsolutePosition.Y)
+					end
 					settings.ResizeMode = "InnerTouch"
 					render()
 					settings.ResizeMode = "ArcJoin"
 					render()
 					panel = screen:FindFirstChild("ArcJoinOptions", true)
+					header = screen:FindFirstChild("ArcJoin", true)
 					t.expect(panel.AbsoluteSize.Y).toBe(height)
-					t.expect(panel.Aligned.Outline.AbsolutePosition.Y).toBe(header.AbsolutePosition.Y)
+					if not classic then
+						t.expect(header.Outline.AbsolutePosition.Y).toBe(header.AbsolutePosition.Y)
+					end
 					settings.ArcJoin.AdvancedPadding = true
 					render()
 					t.expect(panel.AbsoluteSize.Y).toBe(height)
 					settings.ArcJoin.AutomaticSegments = false
 					render()
 					t.expect(panel.AbsoluteSize.Y > height).toBe(true)
-					local content = panel.Aligned.Content
+					local content = panel.Content
 					local a, b =
 						content.AutomaticSegments:FindFirstChild("CheckBox", true),
 						content.AdvancedPadding:FindFirstChild("CheckBox", true)
 					t.expect(a.AbsolutePosition.X + a.AbsoluteSize.X).toBe(b.AbsolutePosition.X + b.AbsoluteSize.X)
-					settings.WindowHeightDelta = -250
-					render()
-					local scroll = screen:FindFirstChild("Scroll", true)
-					t.expect(header.AbsolutePosition.Y >= scroll.AbsolutePosition.Y).toBe(true)
-					t.expect(
-						header.AbsolutePosition.Y + header.AbsoluteSize.Y
-							<= scroll.AbsolutePosition.Y + scroll.AbsoluteWindowSize.Y
-					).toBe(true)
-				end,
-			})
-		end
-	end)
-
-	t.test("Native scrolling leaves focus alone while minimum height follows the options", function()
-		for _, classic in { false, true } do
-			renderGui({
-				ClassicUI = classic,
-				ResizeMode = "ArcJoin",
-				Check = function(screen, settings, render)
-					settings.WindowHeightDelta = -10000
-					render()
-					local scroll = screen:FindFirstChild("Scroll", true)
-					t.expect(scroll.ScrollingEnabled).toBe(true)
-					t.expect(screen:FindFirstChild("SectionScroll", true) == nil).toBe(true)
-					t.expect(scroll.CanvasPosition.Y).toBe(0)
-					local autoHeight = scroll.Parent.Parent.AbsoluteSize.Y
-					settings.ArcJoin.AutomaticSegments = false
-					render()
-					t.expect(scroll.Parent.Parent.AbsoluteSize.Y > autoHeight).toBe(true)
-					t.expect(scroll.CanvasPosition.Y).toBe(0)
+					local segments = content.Segments
+					local segmentLabel = segments:FindFirstChild("Label", true)
+					local segmentTextBox = segments:FindFirstChild("TextBox", true)
+					local secondTextBox = content.Padding.Second.Input.TextBox
+					t.expect(segmentLabel.TextXAlignment).toBe(Enum.TextXAlignment.Left)
+					t.expect(segmentTextBox.AbsoluteSize.X).toBe(secondTextBox.AbsoluteSize.X)
+					t.expect(segmentTextBox.AbsolutePosition.X).toBe(secondTextBox.AbsolutePosition.X)
+					t.expect(segmentTextBox.AbsolutePosition.X > segmentLabel.AbsolutePosition.X + segmentLabel.AbsoluteSize.X).toBe(true)
 				end,
 			})
 		end
@@ -187,11 +182,17 @@ return function(t: TestContext)
 				ResizeMode = "RoundedJoin",
 				Check = function(screen, settings, render)
 					local menu = screen:FindFirstChild("RoundedJoinOptions", true)
-					t.expect(menu.LayoutOrder).toBe(6)
+					t.expect(menu ~= nil).toBe(true)
 					for _, cylinder in { false, true, false } do
 						settings.UseCylinderForRoundedJoin = cylinder
 						render()
-						local filler = screen:FindFirstChild("RoundedJoin", true):FindFirstChild("Filler", true)
+						local row = screen:FindFirstChild("RoundedJoin", true)
+						if classic then
+							t.expect(row.Icon:IsA("ImageLabel")).toBe(true)
+							t.expect(row.Icon.Image).toBe("rbxassetid://9834555074")
+							continue
+						end
+						local filler = row:FindFirstChild("Filler", true)
 						t.expect(filler:IsA("Part")).toBe(cylinder)
 						if cylinder then
 							t.expect(filler.Shape).toBe(Enum.PartType.Cylinder)

@@ -33,8 +33,10 @@ local function NumberInput(props: {
 	ChipColor: Color3?,
 	Grow: boolean?,
 	EmptyAsZero: boolean?,
+	TextBoxWidth: UDim?,
 })
 	local hasFocus, setHasFocus = React.useState(false)
+	local textBoxWidth = props.TextBoxWidth
 
 	local valueText = string.format("%g", props.Value)
 	local displayText =
@@ -96,14 +98,21 @@ local function NumberInput(props: {
 			AutomaticSize = Enum.AutomaticSize.XY,
 			Font = Enum.Font.SourceSans,
 			TextSize = 18,
+			TextXAlignment = Enum.TextXAlignment.Left,
 			LayoutOrder = 1,
+		}, {
+			Flex = textBoxWidth and e("UIFlexItem", {
+				FlexMode = Enum.UIFlexMode.Grow,
+			}),
 		}),
 		TextBox = e("TextBox", {
 			Text = textFitsAtNormalSize and displayText or " " .. displayText,
 			TextColor3 = Colors.WHITE,
 			RichText = true,
 			BackgroundColor3 = Colors.GREY,
-			Size = UDim2.new(0, 0, 0, 24),
+			Size = if textBoxWidth
+				then UDim2.new(textBoxWidth.Scale, textBoxWidth.Offset, 0, 24)
+				else UDim2.fromOffset(0, 24),
 			Font = Enum.Font.RobotoMono,
 			TextScaled = not textFitsAtNormalSize,
 			TextSize = 20,
@@ -122,7 +131,7 @@ local function NumberInput(props: {
 			Corner = e("UICorner", {
 				CornerRadius = UDim.new(0, 4),
 			}),
-			Flex = e("UIFlexItem", {
+			Flex = not textBoxWidth and e("UIFlexItem", {
 				FlexMode = Enum.UIFlexMode.Grow,
 			}),
 			Border = hasFocus and e("UIStroke", {

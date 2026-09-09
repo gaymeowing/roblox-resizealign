@@ -50,7 +50,9 @@ local function SessionTopInfoRow(props: {
 		PopoutPanelButton = e("ImageButton", {
 			Size = UDim2.fromOffset(16, 16),
 			BackgroundTransparency = 1,
-			Image = if props.Panelized then "rbxassetid://138963813997953" else "rbxassetid://86290965429311",
+			Image = if props.Panelized
+				then "rbxassetid://138963813997953"
+				else "rbxassetid://86290965429311",
 			LayoutOrder = 0,
 			[React.Event.MouseButton1Click] = function()
 				props.HandleAction("togglePanelized")
@@ -127,7 +129,7 @@ local function SessionTopInfoRow(props: {
 				end,
 				Disabled = false,
 			}),
-		}),
+		})
 	})
 end
 
@@ -184,7 +186,8 @@ local function createBeginDragFunction(settings: Types.PluginGuiSettings, update
 		local windowSize = getMainWindowSize(instance)
 
 		-- In screen space
-		local startWindowPositionScreenSpace = settings.WindowAnchor * viewSize
+		local startWindowPositionScreenSpace =
+			settings.WindowAnchor * viewSize
 			+ settings.WindowPosition
 			- windowSize * settings.WindowAnchor
 
@@ -209,13 +212,13 @@ end
 local function SessionView(props: {
 	State: Types.PluginGuiState,
 	Config: Types.PluginGuiConfig,
-	OnSizeChanged: ((Vector2) -> ())?,
-	children: { [string]: React.ReactNode }?,
+	OnSizeChanged: (Vector2) -> ()?,
+	children: {[string]: React.ReactNode}?,
 }): React.ReactNode
 	local state = props.State
 	local nextOrder = createNextOrder()
 
-	local childrenPlusListLayout: { [string]: React.ReactNode } = table.clone(assert(props.children))
+	local childrenPlusListLayout: {[string]: React.ReactNode} = table.clone(assert(props.children))
 	childrenPlusListLayout.ListLayout = e("UIListLayout", {
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	})
@@ -224,9 +227,9 @@ local function SessionView(props: {
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
-		[React.Change.AbsoluteSize] = function(frame: Frame)
+		[React.Change.AbsoluteSize] = function(rbx: Frame)
 			if props.OnSizeChanged then
-				props.OnSizeChanged(frame.AbsoluteSize)
+				props.OnSizeChanged(rbx.AbsoluteSize)
 			end
 		end,
 	}, {
@@ -261,8 +264,8 @@ local function EmptySessionView(props: {
 	Config: Types.PluginGuiConfig,
 })
 	local state = props.State
-	local beginDrag = if not state.Panelized
-		then createBeginDragFunction(state.Settings, state.UpdatedSettings)
+	local beginDrag = if not state.Panelized then
+		createBeginDragFunction(state.Settings, state.UpdatedSettings)
 		else nil
 
 	return e("ImageButton", {
@@ -309,16 +312,10 @@ local function EmptySessionView(props: {
 	})
 end
 
-local function createBeginResizeFunction(
-	settings: Types.PluginGuiSettings,
-	updatedSettings: () -> (),
-	expandedHeight: number,
-	minWindowHeight: number
-)
+local function createBeginResizeFunction(settings: Types.PluginGuiSettings, updatedSettings: () -> ())
 	return function(instance, x, y)
 		local startMouseLocation = UserInputService:GetMouseLocation()
-		local minimumDelta = minWindowHeight - expandedHeight
-		local startWindowSizeDelta = math.clamp(settings.WindowHeightDelta, minimumDelta, 0)
+		local startWindowSizeDelta = settings.WindowHeightDelta
 		local startWindowPosition = settings.WindowPosition
 
 		task.spawn(function()
@@ -328,11 +325,10 @@ local function createBeginResizeFunction(
 				local delta = newMouseLocation - startMouseLocation
 				if delta ~= previousDelta then
 					previousDelta = delta
-					settings.WindowHeightDelta = math.clamp(startWindowSizeDelta + delta.Y, minimumDelta, 0)
+					settings.WindowHeightDelta = math.min(0, startWindowSizeDelta + delta.Y)
 					if settings.WindowAnchor.Y == 1 then
 						-- If anchored to bottom, need to move position up as we grow
-						settings.WindowPosition = startWindowPosition
-							+ Vector2.new(0, settings.WindowHeightDelta - startWindowSizeDelta)
+						settings.WindowPosition = startWindowPosition + Vector2.new(0, delta.Y)
 					end
 					updatedSettings()
 				end
@@ -343,19 +339,16 @@ local function createBeginResizeFunction(
 end
 
 local function ScrollableSessionView(props: {
-	MinWindowHeight: number,
 	State: Types.PluginGuiState,
 	Config: Types.PluginGuiConfig,
-	children: { [string]: React.ReactNode }?,
+	children: {[string]: React.ReactNode}?,
 }): React.ReactNode
 	local state = props.State
 	local dragFunction = createBeginDragFunction(state.Settings, state.UpdatedSettings)
 	local currentDisplaySize, setCurrentDisplaySize = React.useState(300)
-	local HEADER_SIZE_EXTRA = 28 + 8
-	local minWindowHeight = props.MinWindowHeight
-	local expandedHeight = math.max(minWindowHeight, currentDisplaySize)
+	local HEADER_SIZE_EXTRA = 28
 	return e("ImageButton", {
-		Size = UDim2.new(1, 0, 0, math.max(minWindowHeight, expandedHeight + state.Settings.WindowHeightDelta)),
+		Size = UDim2.new(1, 0, 0, currentDisplaySize + state.Settings.WindowHeightDelta),
 		BackgroundTransparency = 0,
 		BackgroundColor3 = Colors.BLACK,
 		AutoButtonColor = false,
@@ -385,7 +378,6 @@ local function ScrollableSessionView(props: {
 				ScrollBarThickness = 0,
 				LayoutOrder = 2,
 			}, {
-				Padding = e("UIPadding", { PaddingTop = UDim.new(0, 8) }),
 				Flex = e("UIFlexItem", {
 					FlexMode = Enum.UIFlexMode.Grow,
 				}),
@@ -414,9 +406,7 @@ local function ScrollableSessionView(props: {
 			ZIndex = 2,
 			[React.Event.MouseButton1Down] = createBeginResizeFunction(
 				state.Settings,
-				state.UpdatedSettings,
-				expandedHeight,
-				minWindowHeight
+				state.UpdatedSettings
 			),
 		}, {
 			Corner = e("UICorner", {
@@ -441,10 +431,9 @@ local function ScrollableSessionView(props: {
 end
 
 local function MainGuiViewport(props: {
-	MinWindowHeight: number,
 	State: Types.PluginGuiState,
 	Config: Types.PluginGuiConfig,
-	children: { [string]: React.ReactNode }?,
+	children: {[string]: React.ReactNode}?,
 })
 	local state = props.State
 	local settings = state.Settings
@@ -456,11 +445,8 @@ local function MainGuiViewport(props: {
 	return e("Frame", {
 		Size = UDim2.fromOffset(240, 0),
 		Position = UDim2.new(
-			settings.WindowAnchor.X,
-			settings.WindowPosition.X,
-			settings.WindowAnchor.Y,
-			settings.WindowPosition.Y
-		),
+			settings.WindowAnchor.X, settings.WindowPosition.X,
+			settings.WindowAnchor.Y, settings.WindowPosition.Y),
 		AnchorPoint = settings.WindowAnchor,
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
@@ -468,7 +454,6 @@ local function MainGuiViewport(props: {
 	}, {
 		Content = if state.Mode == "active"
 			then e(ScrollableSessionView, {
-				MinWindowHeight = props.MinWindowHeight,
 				Config = props.Config,
 				State = state,
 			}, props.children)
@@ -541,7 +526,7 @@ end
 local function MainGuiPanelized(props: {
 	State: Types.PluginGuiState,
 	Config: Types.PluginGuiConfig,
-	children: { [string]: React.ReactNode }?,
+	children: {[string]: React.ReactNode}?,
 }): React.ReactNode
 	local state = props.State
 	if state.Mode == "inactive" then
@@ -581,10 +566,9 @@ local function MainGuiPanelized(props: {
 end
 
 local function PluginGui(props: {
-	MinWindowHeight: number,
 	State: Types.PluginGuiState,
 	Config: Types.PluginGuiConfig,
-	children: { [string]: React.ReactNode }?,
+	children: {[string]: React.ReactNode}?,
 })
 	local state = props.State
 	return e(HelpGui.Provider, {
@@ -592,7 +576,6 @@ local function PluginGui(props: {
 		UpdatedSettings = state.UpdatedSettings,
 	}, {
 		Viewport = e(state.Panelized and MainGuiPanelized or MainGuiViewport, {
-			MinWindowHeight = props.MinWindowHeight,
 			Config = props.Config,
 			State = state,
 		}, props.children),

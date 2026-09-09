@@ -14,7 +14,6 @@ local OperationButton = require("./PluginGui/OperationButton")
 local ChipForToggle = require("./PluginGui/ChipForToggle")
 local Checkbox = require("./PluginGui/Checkbox")
 local Settings = require("./Settings")
-local ModeOptionsPanel = require("./ModeOptionsPanel")
 local NumberInput = require("./PluginGui/NumberInput")
 local ModeDemo = require("./ModeDemo")
 local PluginGuiTypes = require("./PluginGui/Types")
@@ -33,13 +32,175 @@ local function createNextOrder()
 	end
 end
 
+local function ModeButton(props: {
+	Text: string,
+	IsCurrent: boolean,
+	PreviewMode: ModeDemo.PreviewMode,
+	HelpText: string,
+	OpenBelow: boolean?,
+	LayoutOrder: number?,
+	OnClick: () -> (),
+})
+	local HEIGHT = 28
+	local openBelow = props.OpenBelow or false
+	return e(HelpGui.WithHelpIcon, {
+		LayoutOrder = props.LayoutOrder,
+		Subject = e("Frame", {
+			ZIndex = 2,
+			Size = UDim2.new(1, 0, 0, HEIGHT),
+			BackgroundTransparency = 1,
+		}, {
+			Layout = e("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Padding = UDim.new(0, 0),
+			}),
+			Corner = e("UICorner", { CornerRadius = UDim.new(0, 4) }),
+			Border = props.IsCurrent and not openBelow and e("UIStroke", {
+				Color = Colors.WHITE,
+				Thickness = 2,
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			}),
+			Button = e(ChipForToggle, {
+				Text = props.Text,
+				IsCurrent = props.IsCurrent,
+				JoinedRight = true,
+				OpenBelow = openBelow,
+				HideOutline = true,
+				Height = HEIGHT,
+				TextSize = 24,
+				LayoutOrder = 1,
+				OnClick = props.OnClick,
+			}),
+			Demo = e(ModeDemo, {
+				PreviewMode = props.PreviewMode,
+				JoinedLeft = true,
+				OpenBelow = openBelow,
+				Animate = props.IsCurrent,
+				Size = UDim2.fromOffset(60, HEIGHT),
+				LayoutOrder = 2,
+			}),
+		}),
+		Help = e(HelpGui.BasicTooltip, {
+			HelpRichText = props.HelpText,
+		}),
+	})
+end
+
+local function ModeOptionsPanel(props: {
+	Name: string,
+	children: { [string]: any }?,
+})
+	-- ReactNode's recursive table type cannot be extended after cloning.
+	local content = {} :: { [string]: any }
+	for name, child in props.children or {} do
+		content[name] = child
+	end
+	content.Layout = e("UIListLayout", {
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 4),
+	})
+	content.PaddingInset = e("UIPadding", {
+		PaddingTop = UDim.new(0, 4),
+		PaddingBottom = UDim.new(0, 8),
+		PaddingLeft = UDim.new(0, 8),
+		PaddingRight = UDim.new(0, 8),
+	})
+
+	return e("Frame", {
+		Name = props.Name,
+		Size = UDim2.fromScale(1, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = Color3.fromRGB(18, 18, 18),
+		BorderSizePixel = 0,
+	}, {
+		Corner = e("UICorner", {
+			TopLeftRadius = UDim.new(),
+			TopRightRadius = UDim.new(),
+			BottomLeftRadius = UDim.new(0, 2),
+			BottomRightRadius = UDim.new(0, 2),
+		}),
+		Content = e("Frame", {
+			Size = UDim2.fromScale(1, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+		}, content),
+	})
+end
+
+local function ExpandableModeButton(props: {
+	-- ReactNode's recursive type is invariant across component boundaries.
+	ButtonComponent: any,
+	ButtonProps: any,
+	ExpandedContent: any,
+	ContentInset: number?,
+	ShowOutline: boolean?,
+	LayoutOrder: number?,
+})
+	local expandedContent = props.ExpandedContent
+	local contentInset = props.ContentInset or 0
+
+	return e("Frame", {
+		ZIndex = 2,
+		Size = UDim2.fromScale(1, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = props.LayoutOrder,
+	}, {
+		OrderedContent = e("Frame", {
+			Size = UDim2.fromScale(1, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+		}, {
+			Layout = e("UIListLayout", {
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}),
+			Header = e("Frame", {
+				Size = UDim2.fromScale(1, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+				LayoutOrder = 1,
+			}, {
+				Content = e(props.ButtonComponent, props.ButtonProps),
+			}),
+			Options = expandedContent and e("Frame", {
+				Size = UDim2.fromScale(1, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+				LayoutOrder = 2,
+			}, {
+				Content = e("Frame", {
+					Position = UDim2.fromOffset(contentInset, 0),
+					Size = UDim2.new(1, -contentInset, 0, 0),
+					AutomaticSize = Enum.AutomaticSize.Y,
+					BackgroundTransparency = 1,
+				}, {
+					Content = expandedContent,
+				}),
+			}),
+		}),
+		Outline = expandedContent and props.ShowOutline and e("Frame", {
+			ZIndex = 4,
+			Position = UDim2.fromOffset(contentInset, 0),
+			Size = UDim2.new(1, -contentInset, 1, 0),
+			BackgroundTransparency = 1,
+		}, {
+			Corner = e("UICorner", {
+				CornerRadius = UDim.new(0, 4),
+			}),
+			Stroke = e("UIStroke", {
+				Color = Colors.WHITE,
+				Thickness = 2,
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+				BorderStrokePosition = Enum.BorderStrokePosition.Center,
+			}),
+		}),
+	})
+end
+
 local function ArcJoinOptions(props: {
-	RootRef: ((GuiObject?) -> ())?,
 	Options: Settings.ArcJoinOptions,
 	UpdatedSettings: () -> (),
-	LayoutOrder: number?,
-	InsetLeft: number?,
-	HeaderHeight: number?,
 })
 	local options = props.Options
 	local function paddingInput(key: "Padding" | "PaddingA" | "PaddingB")
@@ -97,6 +258,7 @@ local function ArcJoinOptions(props: {
 		Segments = not options.AutomaticSegments and e(NumberInput, {
 			Label = "Segments",
 			Value = options.Segments,
+			TextBoxWidth = UDim.new(0.5, -3),
 			LayoutOrder = 2,
 			ValueEntered = function(value: number): number
 				if value % 1 == 0 and value >= 1 then
@@ -148,26 +310,16 @@ local function ArcJoinOptions(props: {
 	end
 
 	return e(ModeOptionsPanel, {
-		RootRef = props.RootRef,
-		LayoutOrder = props.LayoutOrder,
-		InsetLeft = props.InsetLeft,
-		HeaderHeight = props.HeaderHeight,
+		Name = "ArcJoinOptions",
 	}, content)
 end
 
 local function OuterTouchOptions(props: {
-	RootRef: ((GuiObject?) -> ())?,
 	Settings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
-	LayoutOrder: number?,
-	InsetLeft: number?,
-	HeaderHeight: number?,
 })
 	return e(ModeOptionsPanel, {
-		RootRef = props.RootRef,
-		LayoutOrder = props.LayoutOrder,
-		InsetLeft = props.InsetLeft,
-		HeaderHeight = props.HeaderHeight,
+		Name = "OuterTouchOptions",
 	}, {
 		AcuteWedgeJoin = e(HelpGui.WithHelpIcon, {
 			Subject = e(Checkbox, {
@@ -186,18 +338,11 @@ local function OuterTouchOptions(props: {
 end
 
 local function RoundedJoinOptions(props: {
-	RootRef: ((GuiObject?) -> ())?,
 	Settings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
-	LayoutOrder: number?,
-	InsetLeft: number?,
-	HeaderHeight: number?,
 })
 	return e(ModeOptionsPanel, {
-		RootRef = props.RootRef,
-		LayoutOrder = props.LayoutOrder,
-		InsetLeft = props.InsetLeft,
-		HeaderHeight = props.HeaderHeight,
+		Name = "RoundedJoinOptions",
 	}, {
 		UseCylinderForRoundedJoin = e(HelpGui.WithHelpIcon, {
 			Subject = e(Checkbox, {
@@ -216,66 +361,54 @@ local function RoundedJoinOptions(props: {
 end
 
 local function ResizeMethodPanel(props: {
-	OnSelectedBoundsChanged: (GuiObject?, GuiObject?) -> (),
 	Settings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
 	LayoutOrder: number?,
 })
 	local current = props.Settings.ResizeMode
-	local target, setTarget = React.useState(nil :: GuiObject?)
-	local endTarget, setEndTarget = React.useState(nil :: GuiObject?)
-	React.useLayoutEffect(function()
-		props.OnSelectedBoundsChanged(target, endTarget)
-	end, { target, endTarget })
-
 	local function makeButton(text: string, mode: Settings.ResizeMode, helpText: string, layoutOrder: number)
-		local HEIGHT = 28
-		local openBelow = (mode == "ArcJoin" or mode == "OuterTouch" or mode == "RoundedJoin") and current == mode
-		return e(HelpGui.WithHelpIcon, {
+		return e(ModeButton, {
+			Text = text,
+			IsCurrent = current == mode,
+			PreviewMode = if mode == "RoundedJoin" and props.Settings.UseCylinderForRoundedJoin
+				then "RoundedJoinCylinder"
+				else mode,
+			HelpText = helpText,
 			LayoutOrder = layoutOrder,
-			Subject = e("Frame", {
-				ref = if current == mode then setTarget else nil,
-				ZIndex = 2,
-				Size = UDim2.new(1, 0, 0, HEIGHT),
-				BackgroundTransparency = 1,
-			}, {
-				Layout = e("UIListLayout", {
-					FillDirection = Enum.FillDirection.Horizontal,
-					SortOrder = Enum.SortOrder.LayoutOrder,
-					Padding = UDim.new(0, 0),
-				}),
-				Corner = e("UICorner", { CornerRadius = UDim.new(0, 4) }),
-				Border = current == mode and not openBelow and e("UIStroke", {
-					Color = Colors.WHITE,
-					Thickness = 2,
-					ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-				}),
-				Button = e(ChipForToggle, {
-					Text = text,
-					IsCurrent = current == mode,
-					JoinedRight = true,
-					OpenBelow = openBelow,
-					HideOutline = true,
-					Height = HEIGHT,
-					TextSize = 24,
-					LayoutOrder = 1,
-					OnClick = function()
-						props.Settings.ResizeMode = mode
-						props.UpdatedSettings()
-					end,
-				}),
-				Demo = e(ModeDemo, {
-					PreviewMode = if mode == "RoundedJoin" and props.Settings.UseCylinderForRoundedJoin then "RoundedJoinCylinder" else mode,
-					JoinedLeft = true,
-					OpenBelow = openBelow,
-					Animate = current == mode,
-					Size = UDim2.fromOffset(60, HEIGHT),
-					LayoutOrder = 2,
-				}),
-			}),
-			Help = e(HelpGui.BasicTooltip, {
-				HelpRichText = helpText,
-			}),
+			OnClick = function()
+				props.Settings.ResizeMode = mode
+				props.UpdatedSettings()
+			end,
+		})
+	end
+
+	local function makeExpandableButton(
+		text: string,
+		mode: Settings.ResizeMode,
+		helpText: string,
+		layoutOrder: number,
+		expandedContent: any
+	)
+		local isCurrent = current == mode
+		return e(ExpandableModeButton, {
+			ButtonComponent = ModeButton,
+			ButtonProps = {
+				Text = text,
+				IsCurrent = isCurrent,
+				PreviewMode = if mode == "RoundedJoin" and props.Settings.UseCylinderForRoundedJoin
+					then "RoundedJoinCylinder"
+					else mode,
+				HelpText = helpText,
+				OpenBelow = isCurrent,
+				OnClick = function()
+					props.Settings.ResizeMode = mode
+					props.UpdatedSettings()
+				end,
+			},
+			LayoutOrder = layoutOrder,
+			ContentInset = if props.Settings.HaveHelp then 20 else 0,
+			ShowOutline = true,
+			ExpandedContent = if isCurrent then expandedContent else nil,
 		})
 	end
 
@@ -284,20 +417,16 @@ local function ResizeMethodPanel(props: {
 		LayoutOrder = props.LayoutOrder,
 		Padding = UDim.new(0, 4),
 	}, {
-		OuterTouch = makeButton(
+		OuterTouch = makeExpandableButton(
 			"Outer Touch",
 			"OuterTouch",
 			"Extend both parts until their faces align at the outermost points. Good for sealing up non-right-angle joints.",
-			1
+			1,
+			e(OuterTouchOptions, {
+				Settings = props.Settings,
+				UpdatedSettings = props.UpdatedSettings,
+			})
 		),
-		OuterTouchOptions = current == "OuterTouch" and e(OuterTouchOptions, {
-			RootRef = setEndTarget,
-			Settings = props.Settings,
-			UpdatedSettings = props.UpdatedSettings,
-			InsetLeft = if props.Settings.HaveHelp then 20 else 0,
-			HeaderHeight = 28,
-			LayoutOrder = 2,
-		}),
 		InnerTouch = makeButton(
 			"Inner Touch",
 			"InnerTouch",
@@ -310,34 +439,26 @@ local function ResizeMethodPanel(props: {
 			"Extend to inner touch and fill the remaining gap with wedge parts to form a sharp point. This mode always avoids Z-fighting.",
 			4
 		),
-		RoundedJoin = makeButton(
+		RoundedJoin = makeExpandableButton(
 			"Rounded Join",
 			"RoundedJoin",
 			"Connect the selected faces with an automatic arc using fixed padding, or use the original cylinder filler.",
-			5
+			5,
+			e(RoundedJoinOptions, {
+				Settings = props.Settings,
+				UpdatedSettings = props.UpdatedSettings,
+			})
 		),
-		RoundedJoinOptions = current == "RoundedJoin" and e(RoundedJoinOptions, {
-			RootRef = setEndTarget,
-			Settings = props.Settings,
-			UpdatedSettings = props.UpdatedSettings,
-			InsetLeft = if props.Settings.HaveHelp then 20 else 0,
-			HeaderHeight = 28,
-			LayoutOrder = 6,
-		}),
-		ArcJoin = makeButton(
+		ArcJoin = makeExpandableButton(
 			"Arc Join",
 			"ArcJoin",
 			"Connect the selected faces with an arc of clones of the first part. Segments are automatic by default. Padding extends each selected end before the arc begins.",
-			7
+			7,
+			e(ArcJoinOptions, {
+				Options = props.Settings.ArcJoin,
+				UpdatedSettings = props.UpdatedSettings,
+			})
 		),
-		ArcJoinOptions = current == "ArcJoin" and e(ArcJoinOptions, {
-			RootRef = setEndTarget,
-			Options = props.Settings.ArcJoin,
-			UpdatedSettings = props.UpdatedSettings,
-			InsetLeft = if props.Settings.HaveHelp then 20 else 0,
-			HeaderHeight = 28,
-			LayoutOrder = 8,
-		}),
 		ButtJoint = makeButton(
 			"Butt Joint",
 			"ButtJoint",
@@ -477,7 +598,6 @@ end
 
 -- Classic UI: OperationButton with icon
 local function IconOperationButton(props: {
-	RootRef: ((GuiObject?) -> ())?,
 	Text: string,
 	SubText: string,
 	IsCurrent: boolean,
@@ -489,7 +609,6 @@ local function IconOperationButton(props: {
 })
 	local fullText = string.format('%s\n<i><font size="12" color="#AAA">%s</font></i>', props.Text, props.SubText)
 	return e("Frame", {
-		ref = props.RootRef,
 		ZIndex = 2,
 		Size = UDim2.new(1, 0, 0, 32),
 		BackgroundTransparency = 1,
@@ -551,27 +670,18 @@ local RESIZE_MODE_ICONS: { [Settings.ResizeMode]: string } = {
 }
 
 local function ClassicResizeMethodPanel(props: {
-	OnSelectedBoundsChanged: (GuiObject?, GuiObject?) -> (),
 	Settings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
 	LayoutOrder: number?,
 })
 	local current = props.Settings.ResizeMode
-	local target, setTarget = React.useState(nil :: GuiObject?)
-	local endTarget, setEndTarget = React.useState(nil :: GuiObject?)
-	React.useLayoutEffect(function()
-		props.OnSelectedBoundsChanged(target, endTarget)
-	end, { target, endTarget })
 	local function makeButton(mode: Settings.ResizeMode, label: string, subText: string, layoutOrder: number)
 		return e(IconOperationButton, {
-			RootRef = if current == mode then setTarget else nil,
 			Text = label,
 			SubText = subText,
 			IsCurrent = current == mode,
 			Icon = RESIZE_MODE_ICONS[mode],
-			PreviewMode = if mode == "RoundedJoin" and props.Settings.UseCylinderForRoundedJoin then "RoundedJoinCylinder"
-				else if mode == "ArcJoin" or mode == "RoundedJoin" then mode else nil,
-			OpenBelow = (mode == "ArcJoin" or mode == "OuterTouch" or mode == "RoundedJoin") and current == mode,
+			PreviewMode = if mode == "ArcJoin" then mode else nil,
 			LayoutOrder = layoutOrder,
 			OnClick = function()
 				props.Settings.ResizeMode = mode
@@ -579,36 +689,70 @@ local function ClassicResizeMethodPanel(props: {
 			end,
 		})
 	end
+
+	local function makeExpandableButton(
+		mode: Settings.ResizeMode,
+		label: string,
+		subText: string,
+		layoutOrder: number,
+		expandedContent: any
+	)
+		local isCurrent = current == mode
+		local content = if isCurrent then expandedContent else nil
+		return e(ExpandableModeButton, {
+			ButtonComponent = IconOperationButton,
+			ButtonProps = {
+				Text = label,
+				SubText = subText,
+				IsCurrent = isCurrent,
+				Icon = RESIZE_MODE_ICONS[mode],
+				PreviewMode = if mode == "ArcJoin" then mode else nil,
+				OpenBelow = content ~= nil,
+				OnClick = function()
+					props.Settings.ResizeMode = mode
+					props.UpdatedSettings()
+				end,
+			},
+			LayoutOrder = layoutOrder,
+			ExpandedContent = content,
+		})
+	end
 	return e(SubPanel, {
 		Title = "Resize Method",
 		LayoutOrder = props.LayoutOrder,
 		Padding = UDim.new(0, 4),
 	}, {
-		OuterTouch = makeButton("OuterTouch", "Outer Touch", "extend to outermost alignment", 1),
-		OuterTouchOptions = current == "OuterTouch" and e(OuterTouchOptions, {
-			RootRef = setEndTarget,
-			HeaderHeight = 32,
-			Settings = props.Settings,
-			UpdatedSettings = props.UpdatedSettings,
-			LayoutOrder = 2,
-		}),
+		OuterTouch = makeExpandableButton(
+			"OuterTouch",
+			"Outer Touch",
+			"extend to outermost alignment",
+			1,
+			e(OuterTouchOptions, {
+				Settings = props.Settings,
+				UpdatedSettings = props.UpdatedSettings,
+			})
+		),
 		InnerTouch = makeButton("InnerTouch", "Inner Touch", "extend to innermost alignment", 3),
-		RoundedJoin = makeButton("RoundedJoin", "Rounded Join", "rounded arc or cylinder filler", 5),
-		RoundedJoinOptions = current == "RoundedJoin" and e(RoundedJoinOptions, {
-			RootRef = setEndTarget,
-			Settings = props.Settings,
-			UpdatedSettings = props.UpdatedSettings,
-			HeaderHeight = 32,
-			LayoutOrder = 6,
-		}),
-		ArcJoin = makeButton("ArcJoin", "Arc Join", "connect with an arc of clones", 7),
-		ArcJoinOptions = current == "ArcJoin" and e(ArcJoinOptions, {
-			RootRef = setEndTarget,
-			HeaderHeight = 32,
-			Options = props.Settings.ArcJoin,
-			UpdatedSettings = props.UpdatedSettings,
-			LayoutOrder = 8,
-		}),
+		RoundedJoin = makeExpandableButton(
+			"RoundedJoin",
+			"Rounded Join",
+			"rounded arc or cylinder filler",
+			5,
+			e(RoundedJoinOptions, {
+				Settings = props.Settings,
+				UpdatedSettings = props.UpdatedSettings,
+			})
+		),
+		ArcJoin = makeExpandableButton(
+			"ArcJoin",
+			"Arc Join",
+			"connect with an arc of clones",
+			7,
+			e(ArcJoinOptions, {
+				Options = props.Settings.ArcJoin,
+				UpdatedSettings = props.UpdatedSettings,
+			})
+		),
 		ButtJoint = makeButton("ButtJoint", "Butt Joint", "butt up against second face", 9),
 		ExtendUpTo = makeButton("ExtendUpTo", "Extend Up To", "extend to first contact", 10),
 		ExtendInto = makeButton("ExtendInto", "Extend Into", "extend to full penetration", 11),
@@ -692,7 +836,6 @@ local function AdornmentOverlay(props: {
 end
 
 local function ClassicContent(props: {
-	OnSelectedBoundsChanged: (GuiObject?, GuiObject?) -> (),
 	CurrentSettings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
 })
@@ -700,7 +843,6 @@ local function ClassicContent(props: {
 	local nextOrder = createNextOrder()
 	return React.createElement(React.Fragment, nil, {
 		ClassicResizeMethod = e(ClassicResizeMethodPanel, {
-			OnSelectedBoundsChanged = props.OnSelectedBoundsChanged,
 			Settings = currentSettings,
 			UpdatedSettings = props.UpdatedSettings,
 			LayoutOrder = nextOrder(),
@@ -729,7 +871,6 @@ local function ClassicContent(props: {
 end
 
 local function ModernContent(props: {
-	OnSelectedBoundsChanged: (GuiObject?, GuiObject?) -> (),
 	CurrentSettings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
 	HandleAction: (string) -> (),
@@ -738,7 +879,6 @@ local function ModernContent(props: {
 	local nextOrder = createNextOrder()
 	return React.createElement(React.Fragment, nil, {
 		ResizeMethodPanel = e(ResizeMethodPanel, {
-			OnSelectedBoundsChanged = props.OnSelectedBoundsChanged,
 			Settings = currentSettings,
 			UpdatedSettings = props.UpdatedSettings,
 			LayoutOrder = nextOrder(),
@@ -777,38 +917,8 @@ local function ResizeAlignGui(props: {
 	SelectedFace: Face?,
 })
 	local currentSettings = props.CurrentSettings
-	local target, setTarget = React.useState(nil :: GuiObject?)
-	local endTarget, setEndTarget = React.useState(nil :: GuiObject?)
-	local minimumHeight, setMinimumHeight = React.useState(0)
-	local onSelectedBoundsChanged = React.useCallback(function(first: GuiObject?, last: GuiObject?)
-		setTarget(first)
-		setEndTarget(last)
-	end, {})
-	React.useLayoutEffect(function()
-		if not target then
-			return
-		end
-		local bottom = endTarget or target
-		local function updateMinimumHeight()
-			local firstPosition, bottomPosition = target.AbsolutePosition, bottom.AbsolutePosition
-			local firstY, bottomY = firstPosition.Y, bottomPosition.Y
-			setMinimumHeight(bottomY + bottom.AbsoluteSize.Y - firstY + 28 + 8 + 8)
-		end
-		local firstConnection = target:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateMinimumHeight)
-		local lastConnection = if endTarget
-			then endTarget:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateMinimumHeight)
-			else nil
-		updateMinimumHeight()
-		return function()
-			firstConnection:Disconnect()
-			if lastConnection then
-				lastConnection:Disconnect()
-			end
-		end
-	end, { target, endTarget })
 	return e(PluginGui, {
 		Config = RESIZEALIGN_CONFIG,
-		MinWindowHeight = minimumHeight,
 		State = {
 			Mode = props.GuiState,
 			Settings = currentSettings,
@@ -824,12 +934,10 @@ local function ResizeAlignGui(props: {
 		}),
 		Content = if currentSettings.ClassicUI
 			then e(ClassicContent, {
-				OnSelectedBoundsChanged = onSelectedBoundsChanged,
 				CurrentSettings = currentSettings,
 				UpdatedSettings = props.UpdatedSettings,
 			})
 			else e(ModernContent, {
-				OnSelectedBoundsChanged = onSelectedBoundsChanged,
 				CurrentSettings = currentSettings,
 				UpdatedSettings = props.UpdatedSettings,
 				HandleAction = props.HandleAction,
