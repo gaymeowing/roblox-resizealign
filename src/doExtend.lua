@@ -11,6 +11,7 @@ local JointMaker = require(DraggerFramework.Utility.JointMaker)
 local copyPartProps = require(Src.copyPartProps)
 local Settings = require(Src.Settings)
 local ShapeUtils = require(Src.ShapeUtils)
+local ArcJoin = require(Src.ArcJoin)
 
 local otherNormals = ShapeUtils.otherNormals
 local isWedgeShape = ShapeUtils.isWedgeShape
@@ -259,6 +260,39 @@ local function resizePart(face: Face, delta: number)
 	end
 end
 
+local function fillJoint(faceA: Face, faceB: Face, fillPoint: Vector3, fillAxis: Vector3, pointsA: {Vector3}, pointsB: {Vector3}, offsetA: Vector3, offsetB: Vector3)
+	local maxProj = -math.huge
+	local minProj = math.huge
+	local maxRadius = -math.huge
+	for _, point in pointsA do
+		local modPoint = point + offsetA
+		local proj = (modPoint - fillPoint):Dot(fillAxis)
+		maxProj = math.max(maxProj, proj)
+		minProj = math.min(minProj, proj)
+		local toAxis = (modPoint - (fillPoint + fillAxis * proj)).Magnitude
+		maxRadius = math.max(maxRadius, toAxis)
+	end
+	for _, point in pointsB do
+		local modPoint = point + offsetB
+		local proj = (modPoint - fillPoint):Dot(fillAxis)
+		maxProj = math.max(maxProj, proj)
+		minProj = math.min(minProj, proj)
+	end
+	local centerPoint = fillPoint + fillAxis * (0.5 * (minProj + maxProj))
+	local length = (maxProj - minProj)
+	local radius = maxRadius
+	local cyl = Instance.new("Part")
+	copyPartProps(faceB.Object, cyl)
+	if ShapeUtils.isCylinder(faceA.Object) and ShapeUtils.isCylinder(faceB.Object) then
+		cyl.Shape = Enum.PartType.Ball
+	else
+		cyl.Shape = Enum.PartType.Cylinder
+	end
+	cyl.Size = Vector3.new(length, 2 * radius, 2 * radius)
+	cyl.CFrame = CFrame.fromMatrix(centerPoint, fillAxis, getNormal(faceB))
+	cyl.Parent = faceB.Object.Parent
+end
+
 local function fillAcuteGap(face: Face, dirSelf: Vector3, dirOther: Vector3, crossAxis: Vector3, extraLen: number)
 	if extraLen < 0.001 then
 		return
@@ -302,7 +336,7 @@ local function fillAcuteGap(face: Face, dirSelf: Vector3, dirOther: Vector3, cro
 	wedge.Parent = face.Object.Parent
 end
 
-local function getArcExtension(template: BasePart, face: Face, segment: ShapeUtils.ArcSegment): number?
+local function getArcExtension(template: BasePart, face: Face, segment: ArcJoin.Segment): number?
 	local part = face.Object
 	if
 		not template:IsA("Part")
@@ -401,7 +435,7 @@ local function createArcJoin(
 	local pointB, normalB = getBasis(faceB)
 	local startPoint = pointA + normalA * paddingA
 	local startFrame = CFrame.new(startPoint) * faceA.Object.CFrame.Rotation
-	local endPoint, surfaceOffset = ShapeUtils.getArcTargetPoint(
+	local endPoint, surfaceOffset = ArcJoin.getTargetPoint(
 		startFrame,
 		CFrame.new(pointB + normalB * paddingB) * faceB.Object.CFrame.Rotation,
 		faceA.Object.Size,
@@ -417,7 +451,7 @@ local function createArcJoin(
 	if math.max(sizeA.X, sizeA.Y, sizeA.Z, sizeB.X, sizeB.Y, sizeB.Z) > 2048 then
 		error("Arc Join: padding exceeds the maximum part size.")
 	end
-	local segments = ShapeUtils.planArcJoin(
+	local segments = ArcJoin.plan(
 		startFrame,
 		endPoint,
 		normalB,
@@ -473,7 +507,8 @@ local function doExtend(
 	faceB: Face,
 	resizeMode: ResizeMode,
 	acuteWedgeJoin: boolean?,
-	arcOptions: Settings.ArcJoinOptions?
+	arcOptions: Settings.ArcJoinOptions?,
+	useCylinderForRoundedJoin: boolean?
 )
 	if resizeMode == "ArcJoin" then
 		local options = arcOptions or Settings.DefaultArcJoinOptions
@@ -672,7 +707,7 @@ local function doExtend(
 		end
 	end
 
-	if roundedRadius then
+	if roundedRadius and not useCylinderForRoundedJoin then
 		-- Preserve Rounded Join's original intersection and filler radius.
 		-- For a fillet of radius R, the tangent points sit R*tan(turn/2)
 		-- back from that intersection along each of the two source parts.
@@ -699,6 +734,11 @@ local function doExtend(
 		if not faceB.IsWedge and not faceB.CornerWedgeSide then
 			fillAcuteGap(faceB, dirB, dirA, crossAxis, outerLenB - lenB)
 		end
+	end
+
+	if resizeMode == "RoundedJoin" then
+		local fillAxis = dirA:Cross(dirB).Unit
+		fillJoint(faceA, faceB, extendPointA + dirA * lenA, fillAxis, pointsA, pointsB, dirA * lenA, dirB * lenB)
 	end
 
 	if resizeMode == "ButtJoint" then

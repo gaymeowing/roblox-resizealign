@@ -5,6 +5,7 @@ local React = require(Packages.React)
 
 local Colors = require("./PluginGui/Colors")
 local Settings = require("./Settings")
+local ArcJoin = require("./ArcJoin")
 local ShapeUtils = require("./ShapeUtils")
 
 local e = React.createElement
@@ -339,7 +340,7 @@ local function buildRoundedDemo()
 	local pointA = getFaceBasis(fA.cf, fA.size, fA.face) + normalA * deltaA
 	local pointB = getFaceBasis(fB.cf, fB.size, fB.face) + normalB * deltaB
 	local start = CFrame.new(pointA) * fA.cf.Rotation
-	local finish = ShapeUtils.getArcTargetPoint(
+	local finish = ArcJoin.getTargetPoint(
 		start,
 		CFrame.new(pointB) * fB.cf.Rotation,
 		fA.size,
@@ -348,7 +349,7 @@ local function buildRoundedDemo()
 		Vector3.fromNormalId(fB.face)
 	)
 	fillerData =
-		{ segments = assert(ShapeUtils.planArcJoin(start, finish, normalB, fA.size, Vector3.fromNormalId(fA.face), 6)) }
+		{ segments = assert(ArcJoin.plan(start, finish, normalB, fA.size, Vector3.fromNormalId(fA.face), 6)) }
 	return {
 		cameraCFrame = ANG_CAM,
 		partAStart = { CFrame = fA.cf, Size = fA.size },
@@ -373,17 +374,20 @@ local function buildArcDemo()
 		partBEnd = { CFrame = CFrame.new(finish + direction * 1.3) * rotation, Size = Vector3.new(2.6, 1, 0.8) },
 		filler = {
 			segments = assert(
-				ShapeUtils.planArcJoin(CFrame.new(start), finish, -direction, Vector3.new(1, 1, 0.8), Vector3.xAxis, 24)
+				ArcJoin.plan(CFrame.new(start), finish, -direction, Vector3.new(1, 1, 0.8), Vector3.xAxis, 24)
 			),
 		},
 	}
 end
 
-local DEMO_DATA: { [ResizeMode]: any } = {
+export type PreviewMode = ResizeMode | "RoundedJoinCylinder"
+
+local DEMO_DATA: { [PreviewMode]: any } = {
 	OuterTouch = buildDemo(ANG_A, ANG_B, ANG_CAM, "OuterTouch"),
 	InnerTouch = buildDemo(ANG_A, ANG_B, ANG_CAM, "InnerTouch"),
 	WedgeJoin = buildDemo(ANG_A, ANG_B, ANG_CAM, "WedgeJoin"),
 	RoundedJoin = buildRoundedDemo(),
+	RoundedJoinCylinder = buildDemo(ANG_A, ANG_B, ANG_CAM, "RoundedJoin"),
 	ArcJoin = buildArcDemo(),
 	ButtJoint = buildDemo(RT_A, RT_B, RT_CAM, "ButtJoint"),
 	ExtendUpTo = buildDemo(ANG_A, ANG_B, ANG_CAM, "ExtendUpTo"),
@@ -395,7 +399,7 @@ local DEMO_DATA: { [ResizeMode]: any } = {
 --------------------------------------------------------------------------------
 
 type PreviewProps = {
-	ResizeMode: ResizeMode,
+	PreviewMode: PreviewMode,
 	JoinedLeft: boolean?,
 	OpenBelow: boolean?,
 	Animate: boolean?,
@@ -404,7 +408,7 @@ type PreviewProps = {
 }
 
 local function ModeDemo(props: PreviewProps)
-	local mode = props.ResizeMode
+	local mode = props.PreviewMode
 	local animate = if props.Animate ~= nil then props.Animate else true
 	local data = DEMO_DATA[mode]
 	local curved = data.filler ~= nil and data.filler.segments ~= nil
@@ -482,7 +486,7 @@ local function ModeDemo(props: PreviewProps)
 		if highlight then
 			highlight.Transparency = 0
 		end
-	end, { animate, mode } :: { any })
+	end, { animate, data } :: { any })
 
 	-- Animation loop, only runs when animate is true
 	React.useEffect(function()
@@ -558,7 +562,7 @@ local function ModeDemo(props: PreviewProps)
 		return function()
 			task.cancel(thread)
 		end
-	end, { animate, mode } :: { any })
+	end, { animate, data } :: { any })
 
 	-- Use end state for initial render when not animating
 	local initA = if animate then data.partAStart else data.partAEnd
@@ -635,6 +639,19 @@ local function ModeDemo(props: PreviewProps)
 				})
 			end
 			worldChildren.Filler = e("Model", {}, parts)
+		else
+			worldChildren.Filler = e("Part", {
+				ref = fillerRef,
+				Anchored = true,
+				Shape = Enum.PartType.Cylinder,
+				CFrame = data.filler.CFrame,
+				Size = data.filler.Size,
+				Color = FILLER_COLOR,
+				Material = Enum.Material.SmoothPlastic,
+				Transparency = initFillerTransparency,
+				TopSurface = Enum.SurfaceType.Smooth,
+				BottomSurface = Enum.SurfaceType.Smooth,
+			})
 		end
 	end
 

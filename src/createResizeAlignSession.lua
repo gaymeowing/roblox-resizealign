@@ -405,7 +405,8 @@ local function createResizeAlignSession(
 					face,
 					activeSettings.ResizeMode,
 					activeSettings.AcuteWedgeJoin,
-					activeSettings.ArcJoin
+					activeSettings.ArcJoin,
+					activeSettings.UseCylinderForRoundedJoin
 				)
 			end
 			changeSignal:Fire()

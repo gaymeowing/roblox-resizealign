@@ -21,6 +21,7 @@ local function makeTestSettings()
 		HaveHelp = false,
 		ResizeMode = "OuterTouch",
 		AcuteWedgeJoin = true,
+		UseCylinderForRoundedJoin = true,
 		ArcJoin = table.clone(require(script.Parent.Settings).DefaultArcJoinOptions),
 		SelectionThreshold = "25",
 		ClassicUI = false,
@@ -157,41 +158,55 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("Native scrolling keeps the selected mode visible while resizing", function()
+	t.test("Native scrolling leaves focus alone while minimum height follows the options", function()
 		for _, classic in { false, true } do
 			renderGui({
 				ClassicUI = classic,
 				ResizeMode = "ArcJoin",
 				Check = function(screen, settings, render)
 					settings.WindowHeightDelta = -10000
-					for _, mode in { "ArcJoin", "OuterTouch", "RoundedJoin" } do
-						settings.ResizeMode = mode
-						render()
-						local scroll = screen:FindFirstChild("Scroll", true)
-						local header = screen:FindFirstChild(mode, true)
-						t.expect(scroll.ScrollingEnabled).toBe(true)
-						t.expect(screen:FindFirstChild("SectionScroll", true) == nil).toBe(true)
-						t.expect(header.AbsolutePosition.Y >= scroll.AbsolutePosition.Y).toBe(true)
-						t.expect(
-							header.AbsolutePosition.Y + header.AbsoluteSize.Y
-								<= scroll.AbsolutePosition.Y + scroll.AbsoluteWindowSize.Y
-						).toBe(true)
-					end
-					settings.ResizeMode = "ArcJoin"
 					render()
 					local scroll = screen:FindFirstChild("Scroll", true)
+					t.expect(scroll.ScrollingEnabled).toBe(true)
+					t.expect(screen:FindFirstChild("SectionScroll", true) == nil).toBe(true)
+					t.expect(scroll.CanvasPosition.Y).toBe(0)
 					local autoHeight = scroll.Parent.Parent.AbsoluteSize.Y
 					settings.ArcJoin.AutomaticSegments = false
 					render()
 					t.expect(scroll.Parent.Parent.AbsoluteSize.Y > autoHeight).toBe(true)
-					local options = screen:FindFirstChild("ArcJoinOptions", true)
-					t.expect(
-						options.AbsolutePosition.Y + options.AbsoluteSize.Y
-							<= scroll.AbsolutePosition.Y + scroll.AbsoluteWindowSize.Y
-					).toBe(true)
-					scroll.CanvasPosition = Vector2.zero
-					render()
 					t.expect(scroll.CanvasPosition.Y).toBe(0)
+				end,
+			})
+		end
+	end)
+
+	t.test("Rounded Join menu switches between segmented and original cylinder previews", function()
+		for _, classic in { false, true } do
+			renderGui({
+				ClassicUI = classic,
+				ResizeMode = "RoundedJoin",
+				Check = function(screen, settings, render)
+					local menu = screen:FindFirstChild("RoundedJoinOptions", true)
+					t.expect(menu.LayoutOrder).toBe(6)
+					for _, cylinder in { false, true, false } do
+						settings.UseCylinderForRoundedJoin = cylinder
+						render()
+						local filler = screen:FindFirstChild("RoundedJoin", true):FindFirstChild("Filler", true)
+						t.expect(filler:IsA("Part")).toBe(cylinder)
+						if cylinder then
+							t.expect(filler.Shape).toBe(Enum.PartType.Cylinder)
+							local sawFade = false
+							for _ = 1, 24 do
+								task.wait(0.05)
+								if filler.Transparency > 0 and filler.Transparency < 1 then
+									sawFade = true
+								end
+							end
+							t.expect(sawFade).toBe(true)
+						else
+							t.expect(filler:IsA("Model")).toBe(true)
+						end
+					end
 				end,
 			})
 		end

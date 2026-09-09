@@ -77,6 +77,16 @@ return function(t: TestContext)
 		Settings.Save(t.plugin, settings)
 	end)
 
+	t.test("RoundedJoin cylinder defaults off and round-trips", function()
+		local settings = Settings.Load(t.plugin)
+		t.expect(settings.UseCylinderForRoundedJoin).toBe(false)
+		settings.UseCylinderForRoundedJoin = true
+		Settings.Save(t.plugin, settings)
+		t.expect(Settings.Load(t.plugin).UseCylinderForRoundedJoin).toBe(true)
+		settings.UseCylinderForRoundedJoin = false
+		Settings.Save(t.plugin, settings)
+	end)
+
 	t.test("All resize modes round-trip", function()
 		local modes = {
 			"OuterTouch",

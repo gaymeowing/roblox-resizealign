@@ -9,7 +9,6 @@ local Colors = require("./Colors")
 local HelpGui = require("./HelpGui")
 local OperationButton = require("./OperationButton")
 local Types = require("./Types")
-local useScrollTarget = require("./useScrollTarget")
 
 local e = React.createElement
 
@@ -351,10 +350,6 @@ local function ScrollableSessionView(props: {
 }): React.ReactNode
 	local state = props.State
 	local dragFunction = createBeginDragFunction(state.Settings, state.UpdatedSettings)
-	local setScroll, updateScroll, setScrollTarget = useScrollTarget()
-	React.useLayoutEffect(function()
-		setScrollTarget(state.ScrollTarget, state.ScrollEndTarget, 4)
-	end, { state.ScrollTarget, state.ScrollEndTarget })
 	local currentDisplaySize, setCurrentDisplaySize = React.useState(300)
 	local HEADER_SIZE_EXTRA = 28 + 8
 	local minWindowHeight = props.MinWindowHeight
@@ -382,9 +377,6 @@ local function ScrollableSessionView(props: {
 				Config = props.Config,
 			}),
 			Scroll = e("ScrollingFrame", {
-				ref = setScroll,
-				[React.Change.AbsoluteWindowSize] = updateScroll,
-				[React.Change.AbsoluteCanvasSize] = updateScroll,
 				Size = UDim2.new(1, 0, 0, 0),
 				CanvasSize = UDim2.fromScale(1, 0),
 				BorderSizePixel = 0,
@@ -552,10 +544,6 @@ local function MainGuiPanelized(props: {
 	children: { [string]: React.ReactNode }?,
 }): React.ReactNode
 	local state = props.State
-	local setScroll, updateScroll, setScrollTarget = useScrollTarget()
-	React.useLayoutEffect(function()
-		setScrollTarget(state.ScrollTarget, state.ScrollEndTarget, 4)
-	end, { state.ScrollTarget, state.ScrollEndTarget })
 	if state.Mode == "inactive" then
 		return e(InactiveView, {
 			OnActivate = function()
@@ -565,9 +553,6 @@ local function MainGuiPanelized(props: {
 		})
 	else
 		return e("ScrollingFrame", {
-			ref = setScroll,
-			[React.Change.AbsoluteWindowSize] = updateScroll,
-			[React.Change.AbsoluteCanvasSize] = updateScroll,
 			Size = UDim2.fromScale(1, 1),
 			CanvasSize = UDim2.fromScale(1, 0),
 			BorderSizePixel = 0,

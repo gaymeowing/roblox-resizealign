@@ -1,5 +1,5 @@
 local Settings = require(script.Parent.Settings)
-local ShapeUtils = require(script.Parent.ShapeUtils)
+local ArcJoin = require(script.Parent.ArcJoin)
 local doExtend = require(script.Parent.doExtend)
 local TestTypes = require(script.Parent.TestTypes)
 type TestContext = TestTypes.TestContext
@@ -15,7 +15,7 @@ local function inside(segment, point)
 	assert(math.abs(localPoint.Z) <= segment.Size.Z / 2 + 0.0001, "Gap along local Z")
 end
 
-type Segment = ShapeUtils.ArcSegment
+type Segment = ArcJoin.Segment
 
 local function jointBetween(a: Segment, b: Segment, normal: Vector3): (Vector3, Vector3, Vector3)
 	local direction = a.CFrame:VectorToWorldSpace(normal)
@@ -129,6 +129,14 @@ local function tiltedJoin(reverse: boolean, mirror: number)
 	return start, target, firstSize, secondSize, n1, n2
 end
 
+local function checkEndFace(segment: Segment, frame: CFrame, size: Vector3)
+	for _, y in { -1, 1 } do
+		for _, z in { -1, 1 } do
+			inside(segment, frame:PointToWorldSpace(Vector3.new(0, y * size.Y, z * size.Z) / 2))
+		end
+	end
+end
+
 return function(t: TestContext)
 	t.test("RoundedJoin: derives tangent endpoints from the original filler radius", function()
 		for _, thickness in { 2, 4 } do
@@ -163,10 +171,109 @@ return function(t: TestContext)
 		end
 	end)
 
+	t.test("RoundedJoin: cylinder option restores the original filler and endpoints", function()
+		withParts(function(folder, a, b, faceA, faceB)
+			doExtend(faceA, faceB, "RoundedJoin", false, nil, true)
+			near(a.Size, Vector3.new(14, 2, 3))
+			near(b.Size, Vector3.new(2, 14, 3))
+			t.expect(#folder:GetChildren()).toBe(3)
+			for _, part in folder:GetChildren() do
+				if part ~= a and part ~= b then
+					t.expect(part.Shape).toBe(Enum.PartType.Cylinder)
+					near(part.Position, Vector3.new(10, 0, 0))
+					near(part.Size, Vector3.new(3, 2, 2))
+				end
+			end
+		end)
+	end)
+
+	t.test("ArcJoin: three-segment reverse bends cover both complete endpoint faces", function()
+		for _, reverse in { false, true } do
+			for _, mirror in { -1, 1 } do
+				local start, target, size, targetSize, normal, targetNormal = tiltedJoin(reverse, mirror)
+				start += start:VectorToWorldSpace(normal) * 0.6
+				target += target:VectorToWorldSpace(targetNormal) * 0.6
+				local finish, offset = ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
+				local segments = assert(ArcJoin.plan(start, finish, target:VectorToWorldSpace(targetNormal), size, normal, 3, offset))
+				t.expect(#segments).toBe(3)
+				checkEndFace(segments[1], start, size)
+				checkEndFace(segments[3], CFrame.new(finish) * target.Rotation, size)
+				checkPlan(segments, start.Position, finish, normal, size)
+			end
+		end
+	end)
+
+	t.test("ArcJoin: offset D/F endpoints retain their cross-section orientation", function()
+		local d = CFrame.new(-0.6036731, 14.7836733, 12.95) * CFrame.Angles(0, 0, -math.atan2(2, 3))
+		local f = CFrame.new(-11.85, 20.85, 15.275)
+		local dSize, fSize = Vector3.new(19.5422287, 2, 1), Vector3.new(3.7, 0.7, 1)
+		for _, reverse in { false, true } do
+			for _, padding in { 0, 0.6 } do
+				local first, second = if reverse then d else f, if reverse then f else d
+				local size, targetSize = if reverse then dSize else fSize, if reverse then fSize else dSize
+				local normal, targetNormal = if reverse then -Vector3.xAxis else Vector3.xAxis, if reverse then Vector3.xAxis else -Vector3.xAxis
+				local start = first * CFrame.new(normal * (size.X / 2 + padding))
+				local target = second * CFrame.new(targetNormal * (targetSize.X / 2 + padding))
+				local finish, offset = ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
+				local segments = assert(ArcJoin.plan(start, finish, target:VectorToWorldSpace(targetNormal), size, normal, nil, offset))
+				checkEndFace(segments[1], start, size)
+				checkEndFace(segments[#segments], CFrame.new(finish) * target.Rotation, size)
+				near(segments[#segments].CFrame.UpVector, target.UpVector)
+				if reverse then
+					-- The surface must level out into F, rather than dipping as
+					-- the taller template turns around the spatial curve.
+					local top = target.Position.Y + targetSize.Y / 2
+					for i = #segments - 3, #segments do
+						local segment = segments[i]
+						local surface = segment.CFrame.Position + segment.CFrame.UpVector * size.Y / 2
+						assert(math.abs(surface.Y - top) < 0.03, "The upper surface curls into F")
+					end
+				end
+				checkPlan(segments, start.Position, finish, normal, size)
+			end
+		end
+	end)
+
+	t.test("ArcJoin: automatic tangents can be retained and edited explicitly", function()
+		for _, reverse in { false, true } do
+			local start, target, size, targetSize, normal, targetNormal = tiltedJoin(reverse, 1)
+			start += start:VectorToWorldSpace(normal) * 0.6
+			target += target:VectorToWorldSpace(targetNormal) * 0.6
+			local finish, offset = ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
+			local endNormal = target:VectorToWorldSpace(targetNormal)
+			local tangents = ArcJoin.getTangents(start, finish, endNormal, normal, offset)
+			local automatic = assert(ArcJoin.plan(start, finish, endNormal, size, normal, 8, offset))
+			local explicit = assert(ArcJoin.plan(start, finish, endNormal, size, normal, 8, offset, tangents))
+			for i, segment in automatic do
+				t.expect(explicit[i].CFrame).toBe(segment.CFrame)
+				t.expect(explicit[i].Size).toBe(segment.Size)
+			end
+			local original = tangents.Start
+			tangents.Start *= 1.5
+			local edited = assert(ArcJoin.plan(start, finish, endNormal, size, normal, 8, offset, tangents))
+			assert((edited[4].CFrame.Position - automatic[4].CFrame.Position).Magnitude > 0.001)
+			t.expect(tangents.Start).toBe(original * 1.5)
+			checkEndFace(edited[1], start, size)
+			checkEndFace(edited[#edited], CFrame.new(finish) * target.Rotation, size)
+		end
+	end)
+
+	t.test("ArcJoin: explicit tangent directions can bend out of the endpoint plane", function()
+		local size, finish = Vector3.new(2, 0.5, 0.5), Vector3.new(8, 6, 0)
+		local tangents = ArcJoin.getTangents(CFrame.identity, finish, -Vector3.yAxis, Vector3.xAxis)
+		tangents.Start += Vector3.zAxis * 4
+		tangents.Finish += Vector3.zAxis * 2
+		local segments = assert(ArcJoin.plan(CFrame.identity, finish, -Vector3.yAxis, size, Vector3.xAxis, 12, nil, tangents))
+		assert(segments[6].CFrame.Position.Z > 1, "Explicit handles should change the curve's plane")
+		checkPlan(segments, Vector3.zero, finish, Vector3.xAxis, size)
+		checkEndFace(segments[1], CFrame.identity, size)
+		checkEndFace(segments[#segments], CFrame.new(finish) * CFrame.Angles(0, 0, math.pi / 2), size)
+	end)
+
 	t.test("ArcJoin: manual count forms a curved connected chain", function()
 		local size = Vector3.new(4, 2, 3)
 		local segments = assert(
-			ShapeUtils.planArcJoin(CFrame.identity, Vector3.new(10, 10, 0), -Vector3.yAxis, size, Vector3.xAxis, 12)
+			ArcJoin.plan(CFrame.identity, Vector3.new(10, 10, 0), -Vector3.yAxis, size, Vector3.xAxis, 12)
 		)
 		t.expect(#segments).toBe(12)
 		checkPlan(segments, Vector3.zero, Vector3.new(10, 10, 0), Vector3.xAxis, size)
@@ -180,7 +287,7 @@ return function(t: TestContext)
 				local size = Vector3.new(4, width, 3)
 				local finish = Vector3.new(10, 10, 0)
 				local segments =
-					assert(ShapeUtils.planArcJoin(CFrame.identity, finish, -Vector3.yAxis, size, Vector3.xAxis, count))
+					assert(ArcJoin.plan(CFrame.identity, finish, -Vector3.yAxis, size, Vector3.xAxis, count))
 				checkPlan(segments, Vector3.zero, finish, Vector3.xAxis, size)
 				checkMiters(segments, size)
 			end
@@ -191,7 +298,7 @@ return function(t: TestContext)
 		local target = CFrame.new(10, 0, 0) * CFrame.Angles(0, 0, 0.4)
 		for _, side in { -1, 1 } do
 			local start = target * CFrame.new(-10, side * 20, 0)
-			local point = ShapeUtils.getArcTargetPoint(
+			local point = ArcJoin.getTargetPoint(
 				start,
 				target,
 				Vector3.new(4, 2, 3),
@@ -209,13 +316,13 @@ return function(t: TestContext)
 			local start = target * CFrame.new(-10, -side * 20, 0)
 			local size = Vector3.new(4, 12, 3)
 			local point =
-				ShapeUtils.getArcTargetPoint(start, target, size, Vector3.new(4, 2, 3), Vector3.xAxis, -Vector3.xAxis)
+				ArcJoin.getTargetPoint(start, target, size, Vector3.new(4, 2, 3), Vector3.xAxis, -Vector3.xAxis)
 			-- Whichever side the shorter target occupies, the matching surface
 			-- is flush even though the clone's center lies beyond the target face.
 			near(point, target:PointToWorldSpace(Vector3.new(0, -side * 5, 0)))
 			local surface = point + target.UpVector * (side * size.Y / 2)
 			near(surface, target.Position + target.UpVector * side)
-			local segments = assert(ShapeUtils.planArcJoin(start, point, -target.RightVector, size, Vector3.xAxis, 12))
+			local segments = assert(ArcJoin.plan(start, point, -target.RightVector, size, Vector3.xAxis, 12))
 			checkPlan(segments, start.Position, point, Vector3.xAxis, size)
 		end
 	end)
@@ -224,10 +331,10 @@ return function(t: TestContext)
 		for _, mirror in { -1, 1 } do
 			for _, reverse in { false, true } do
 				local start, target, firstSize, secondSize, n1, n2 = tiltedJoin(reverse, mirror)
-				local finish = ShapeUtils.getArcTargetPoint(start, target, firstSize, secondSize, n1, n2)
+				local finish = ArcJoin.getTargetPoint(start, target, firstSize, secondSize, n1, n2)
 				near(finish, target.Position + target.UpVector * (mirror * (secondSize.Y - firstSize.Y) / 2))
 				local segments =
-					assert(ShapeUtils.planArcJoin(start, finish, target:VectorToWorldSpace(n2), firstSize, n1, 24))
+					assert(ArcJoin.plan(start, finish, target:VectorToWorldSpace(n2), firstSize, n1, 24))
 				near(segments[1].CFrame:VectorToWorldSpace(n1), start:VectorToWorldSpace(n1))
 				near(segments[#segments].CFrame:VectorToWorldSpace(n1), -target:VectorToWorldSpace(n2))
 				local last = segments[#segments]
@@ -248,9 +355,9 @@ return function(t: TestContext)
 	t.test("ArcJoin: automatic tilted joins distribute the turn through both endpoints", function()
 		for _, reverse in { false, true } do
 			local start, target, size, targetSize, normal, targetNormal = tiltedJoin(reverse, 1)
-			local finish = ShapeUtils.getArcTargetPoint(start, target, size, targetSize, normal, targetNormal)
+			local finish = ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
 			local segments =
-				assert(ShapeUtils.planArcJoin(start, finish, target:VectorToWorldSpace(targetNormal), size, normal))
+				assert(ArcJoin.plan(start, finish, target:VectorToWorldSpace(targetNormal), size, normal))
 			t.expect(#segments <= 8).toBe(true)
 			local previous = start:VectorToWorldSpace(normal)
 			for _, segment in segments do
@@ -278,10 +385,10 @@ return function(t: TestContext)
 				start += start:VectorToWorldSpace(normal) * padding
 				target += target:VectorToWorldSpace(targetNormal) * padding
 				local finish, surfaceOffset =
-					ShapeUtils.getArcTargetPoint(start, target, size, targetSize, normal, targetNormal)
+					ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
 				local endNormal = target:VectorToWorldSpace(targetNormal)
 				local segments =
-					assert(ShapeUtils.planArcJoin(start, finish, endNormal, size, normal, nil, surfaceOffset))
+					assert(ArcJoin.plan(start, finish, endNormal, size, normal, nil, surfaceOffset))
 				assert(#segments <= 13, `Padding {padding} generated {#segments} segments`)
 				checkPlan(segments, start.Position, finish, normal, size)
 				near(segments[1].CFrame:VectorToWorldSpace(normal), start:VectorToWorldSpace(normal))
@@ -297,9 +404,9 @@ return function(t: TestContext)
 				start += offset + start:VectorToWorldSpace(normal) * padding
 				target += offset + target:VectorToWorldSpace(targetNormal) * padding
 				local finish, surfaceOffset =
-					ShapeUtils.getArcTargetPoint(start, target, size, targetSize, normal, targetNormal)
+					ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
 				local segments = assert(
-					ShapeUtils.planArcJoin(
+					ArcJoin.plan(
 						start,
 						finish,
 						target:VectorToWorldSpace(targetNormal),
@@ -332,9 +439,9 @@ return function(t: TestContext)
 			start += start:VectorToWorldSpace(normal) * 0.6
 			target += target:VectorToWorldSpace(targetNormal) * 0.6
 			local finish, surfaceOffset =
-				ShapeUtils.getArcTargetPoint(start, target, size, targetSize, normal, targetNormal)
+				ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
 			local segments = assert(
-				ShapeUtils.planArcJoin(
+				ArcJoin.plan(
 					start,
 					finish,
 					target:VectorToWorldSpace(targetNormal),
@@ -380,7 +487,7 @@ return function(t: TestContext)
 			local finish = start:PointToWorldSpace((normal + turn) * 10)
 			local size = Vector3.new(4, 2, 3)
 			local segments =
-				assert(ShapeUtils.planArcJoin(start, finish, -start:VectorToWorldSpace(turn), size, normal, 9))
+				assert(ArcJoin.plan(start, finish, -start:VectorToWorldSpace(turn), size, normal, 9))
 			checkPlan(segments, start.Position, finish, normal, size)
 		end
 	end)
@@ -388,11 +495,11 @@ return function(t: TestContext)
 	t.test("ArcJoin: automatic count responds to length and curvature", function()
 		local size = Vector3.new(4, 2, 3)
 		local straight =
-			assert(ShapeUtils.planArcJoin(CFrame.identity, Vector3.new(8, 0, 0), -Vector3.xAxis, size, Vector3.xAxis))
+			assert(ArcJoin.plan(CFrame.identity, Vector3.new(8, 0, 0), -Vector3.xAxis, size, Vector3.xAxis))
 		local long =
-			assert(ShapeUtils.planArcJoin(CFrame.identity, Vector3.new(80, 0, 0), -Vector3.xAxis, size, Vector3.xAxis))
+			assert(ArcJoin.plan(CFrame.identity, Vector3.new(80, 0, 0), -Vector3.xAxis, size, Vector3.xAxis))
 		local curved =
-			assert(ShapeUtils.planArcJoin(CFrame.identity, Vector3.new(5, 5, 0), -Vector3.yAxis, size, Vector3.xAxis))
+			assert(ArcJoin.plan(CFrame.identity, Vector3.new(5, 5, 0), -Vector3.yAxis, size, Vector3.xAxis))
 		t.expect(#long > #straight).toBe(true)
 		t.expect(#curved >= 9).toBe(true)
 		checkPlan(straight, Vector3.zero, Vector3.new(8, 0, 0), Vector3.xAxis, size)
@@ -401,9 +508,9 @@ return function(t: TestContext)
 	t.test("ArcJoin: large gaps and manual counts can exceed 512 segments", function()
 		local size = Vector3.new(4, 2, 3)
 		local finish = Vector3.new(4096, 0, 0)
-		local automatic = assert(ShapeUtils.planArcJoin(CFrame.identity, finish, -Vector3.xAxis, size, Vector3.xAxis))
+		local automatic = assert(ArcJoin.plan(CFrame.identity, finish, -Vector3.xAxis, size, Vector3.xAxis))
 		t.expect(#automatic).toBe(1024)
-		local manual = assert(ShapeUtils.planArcJoin(CFrame.identity, finish, -Vector3.xAxis, size, Vector3.xAxis, 768))
+		local manual = assert(ArcJoin.plan(CFrame.identity, finish, -Vector3.xAxis, size, Vector3.xAxis, 768))
 		t.expect(#manual).toBe(768)
 		for _, segments in { automatic, manual } do
 			local length = 0
@@ -421,7 +528,7 @@ return function(t: TestContext)
 		for _, direction in { Vector3.xAxis, -Vector3.xAxis, Vector3.yAxis } do
 			local size = Vector3.new(4, 2, 3)
 			local finish = Vector3.new(10, 10, 7)
-			local segments = assert(ShapeUtils.planArcJoin(CFrame.identity, finish, direction, size, Vector3.xAxis, 20))
+			local segments = assert(ArcJoin.plan(CFrame.identity, finish, direction, size, Vector3.xAxis, 20))
 			checkPlan(segments, Vector3.zero, finish, Vector3.xAxis, size)
 		end
 	end)

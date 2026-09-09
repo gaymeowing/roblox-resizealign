@@ -185,8 +185,38 @@ local function OuterTouchOptions(props: {
 	})
 end
 
+local function RoundedJoinOptions(props: {
+	RootRef: ((GuiObject?) -> ())?,
+	Settings: Settings.ResizeAlignSettings,
+	UpdatedSettings: () -> (),
+	LayoutOrder: number?,
+	InsetLeft: number?,
+	HeaderHeight: number?,
+})
+	return e(ModeOptionsPanel, {
+		RootRef = props.RootRef,
+		LayoutOrder = props.LayoutOrder,
+		InsetLeft = props.InsetLeft,
+		HeaderHeight = props.HeaderHeight,
+	}, {
+		UseCylinderForRoundedJoin = e(HelpGui.WithHelpIcon, {
+			Subject = e(Checkbox, {
+				Label = "Use Cylinder For Join",
+				Checked = props.Settings.UseCylinderForRoundedJoin,
+				Changed = function(value: boolean)
+					props.Settings.UseCylinderForRoundedJoin = value
+					props.UpdatedSettings()
+				end,
+			}),
+			Help = e(HelpGui.BasicTooltip, {
+				HelpRichText = "Uses a Cylinder part for joining both parts, rather than using an Arc Join.",
+			}),
+		}),
+	})
+end
+
 local function ResizeMethodPanel(props: {
-	OnScrollTargetChanged: (GuiObject?, GuiObject?) -> (),
+	OnSelectedBoundsChanged: (GuiObject?, GuiObject?) -> (),
 	Settings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
 	LayoutOrder: number?,
@@ -195,12 +225,12 @@ local function ResizeMethodPanel(props: {
 	local target, setTarget = React.useState(nil :: GuiObject?)
 	local endTarget, setEndTarget = React.useState(nil :: GuiObject?)
 	React.useLayoutEffect(function()
-		props.OnScrollTargetChanged(target, endTarget)
+		props.OnSelectedBoundsChanged(target, endTarget)
 	end, { target, endTarget })
 
 	local function makeButton(text: string, mode: Settings.ResizeMode, helpText: string, layoutOrder: number)
 		local HEIGHT = 28
-		local openBelow = (mode == "ArcJoin" or mode == "OuterTouch") and current == mode
+		local openBelow = (mode == "ArcJoin" or mode == "OuterTouch" or mode == "RoundedJoin") and current == mode
 		return e(HelpGui.WithHelpIcon, {
 			LayoutOrder = layoutOrder,
 			Subject = e("Frame", {
@@ -235,7 +265,7 @@ local function ResizeMethodPanel(props: {
 					end,
 				}),
 				Demo = e(ModeDemo, {
-					ResizeMode = mode,
+					PreviewMode = if mode == "RoundedJoin" and props.Settings.UseCylinderForRoundedJoin then "RoundedJoinCylinder" else mode,
 					JoinedLeft = true,
 					OpenBelow = openBelow,
 					Animate = current == mode,
@@ -283,14 +313,22 @@ local function ResizeMethodPanel(props: {
 		RoundedJoin = makeButton(
 			"Rounded Join",
 			"RoundedJoin",
-			"Connect the selected faces with an automatically segmented arc, using fixed padding on both ends.",
+			"Connect the selected faces with an automatic arc using fixed padding, or use the original cylinder filler.",
 			5
 		),
+		RoundedJoinOptions = current == "RoundedJoin" and e(RoundedJoinOptions, {
+			RootRef = setEndTarget,
+			Settings = props.Settings,
+			UpdatedSettings = props.UpdatedSettings,
+			InsetLeft = if props.Settings.HaveHelp then 20 else 0,
+			HeaderHeight = 28,
+			LayoutOrder = 6,
+		}),
 		ArcJoin = makeButton(
 			"Arc Join",
 			"ArcJoin",
 			"Connect the selected faces with an arc of clones of the first part. Segments are automatic by default. Padding extends each selected end before the arc begins.",
-			6
+			7
 		),
 		ArcJoinOptions = current == "ArcJoin" and e(ArcJoinOptions, {
 			RootRef = setEndTarget,
@@ -444,7 +482,7 @@ local function IconOperationButton(props: {
 	SubText: string,
 	IsCurrent: boolean,
 	Icon: string?,
-	PreviewMode: Settings.ResizeMode?,
+	PreviewMode: ModeDemo.PreviewMode?,
 	OpenBelow: boolean?,
 	LayoutOrder: number?,
 	OnClick: () -> (),
@@ -479,7 +517,7 @@ local function IconOperationButton(props: {
 		}),
 		Icon = if props.PreviewMode
 			then e(ModeDemo, {
-				ResizeMode = props.PreviewMode,
+				PreviewMode = props.PreviewMode,
 				JoinedLeft = true,
 				OpenBelow = props.OpenBelow,
 				Animate = props.IsCurrent,
@@ -513,7 +551,7 @@ local RESIZE_MODE_ICONS: { [Settings.ResizeMode]: string } = {
 }
 
 local function ClassicResizeMethodPanel(props: {
-	OnScrollTargetChanged: (GuiObject?, GuiObject?) -> (),
+	OnSelectedBoundsChanged: (GuiObject?, GuiObject?) -> (),
 	Settings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
 	LayoutOrder: number?,
@@ -522,7 +560,7 @@ local function ClassicResizeMethodPanel(props: {
 	local target, setTarget = React.useState(nil :: GuiObject?)
 	local endTarget, setEndTarget = React.useState(nil :: GuiObject?)
 	React.useLayoutEffect(function()
-		props.OnScrollTargetChanged(target, endTarget)
+		props.OnSelectedBoundsChanged(target, endTarget)
 	end, { target, endTarget })
 	local function makeButton(mode: Settings.ResizeMode, label: string, subText: string, layoutOrder: number)
 		return e(IconOperationButton, {
@@ -531,8 +569,9 @@ local function ClassicResizeMethodPanel(props: {
 			SubText = subText,
 			IsCurrent = current == mode,
 			Icon = RESIZE_MODE_ICONS[mode],
-			PreviewMode = if mode == "ArcJoin" then mode else nil,
-			OpenBelow = (mode == "ArcJoin" or mode == "OuterTouch") and current == mode,
+			PreviewMode = if mode == "RoundedJoin" and props.Settings.UseCylinderForRoundedJoin then "RoundedJoinCylinder"
+				else if mode == "ArcJoin" or mode == "RoundedJoin" then mode else nil,
+			OpenBelow = (mode == "ArcJoin" or mode == "OuterTouch" or mode == "RoundedJoin") and current == mode,
 			LayoutOrder = layoutOrder,
 			OnClick = function()
 				props.Settings.ResizeMode = mode
@@ -554,8 +593,15 @@ local function ClassicResizeMethodPanel(props: {
 			LayoutOrder = 2,
 		}),
 		InnerTouch = makeButton("InnerTouch", "Inner Touch", "extend to innermost alignment", 3),
-		RoundedJoin = makeButton("RoundedJoin", "Rounded Join", "automatic arc with fixed padding", 5),
-		ArcJoin = makeButton("ArcJoin", "Arc Join", "connect with an arc of clones", 6),
+		RoundedJoin = makeButton("RoundedJoin", "Rounded Join", "rounded arc or cylinder filler", 5),
+		RoundedJoinOptions = current == "RoundedJoin" and e(RoundedJoinOptions, {
+			RootRef = setEndTarget,
+			Settings = props.Settings,
+			UpdatedSettings = props.UpdatedSettings,
+			HeaderHeight = 32,
+			LayoutOrder = 6,
+		}),
+		ArcJoin = makeButton("ArcJoin", "Arc Join", "connect with an arc of clones", 7),
 		ArcJoinOptions = current == "ArcJoin" and e(ArcJoinOptions, {
 			RootRef = setEndTarget,
 			HeaderHeight = 32,
@@ -646,7 +692,7 @@ local function AdornmentOverlay(props: {
 end
 
 local function ClassicContent(props: {
-	OnScrollTargetChanged: (GuiObject?, GuiObject?) -> (),
+	OnSelectedBoundsChanged: (GuiObject?, GuiObject?) -> (),
 	CurrentSettings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
 })
@@ -654,7 +700,7 @@ local function ClassicContent(props: {
 	local nextOrder = createNextOrder()
 	return React.createElement(React.Fragment, nil, {
 		ClassicResizeMethod = e(ClassicResizeMethodPanel, {
-			OnScrollTargetChanged = props.OnScrollTargetChanged,
+			OnSelectedBoundsChanged = props.OnSelectedBoundsChanged,
 			Settings = currentSettings,
 			UpdatedSettings = props.UpdatedSettings,
 			LayoutOrder = nextOrder(),
@@ -683,7 +729,7 @@ local function ClassicContent(props: {
 end
 
 local function ModernContent(props: {
-	OnScrollTargetChanged: (GuiObject?, GuiObject?) -> (),
+	OnSelectedBoundsChanged: (GuiObject?, GuiObject?) -> (),
 	CurrentSettings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
 	HandleAction: (string) -> (),
@@ -692,7 +738,7 @@ local function ModernContent(props: {
 	local nextOrder = createNextOrder()
 	return React.createElement(React.Fragment, nil, {
 		ResizeMethodPanel = e(ResizeMethodPanel, {
-			OnScrollTargetChanged = props.OnScrollTargetChanged,
+			OnSelectedBoundsChanged = props.OnSelectedBoundsChanged,
 			Settings = currentSettings,
 			UpdatedSettings = props.UpdatedSettings,
 			LayoutOrder = nextOrder(),
@@ -734,7 +780,7 @@ local function ResizeAlignGui(props: {
 	local target, setTarget = React.useState(nil :: GuiObject?)
 	local endTarget, setEndTarget = React.useState(nil :: GuiObject?)
 	local minimumHeight, setMinimumHeight = React.useState(0)
-	local onScrollTargetChanged = React.useCallback(function(first: GuiObject?, last: GuiObject?)
+	local onSelectedBoundsChanged = React.useCallback(function(first: GuiObject?, last: GuiObject?)
 		setTarget(first)
 		setEndTarget(last)
 	end, {})
@@ -765,8 +811,6 @@ local function ResizeAlignGui(props: {
 		MinWindowHeight = minimumHeight,
 		State = {
 			Mode = props.GuiState,
-			ScrollTarget = target,
-			ScrollEndTarget = endTarget,
 			Settings = currentSettings,
 			UpdatedSettings = props.UpdatedSettings,
 			HandleAction = props.HandleAction,
@@ -780,12 +824,12 @@ local function ResizeAlignGui(props: {
 		}),
 		Content = if currentSettings.ClassicUI
 			then e(ClassicContent, {
-				OnScrollTargetChanged = onScrollTargetChanged,
+				OnSelectedBoundsChanged = onSelectedBoundsChanged,
 				CurrentSettings = currentSettings,
 				UpdatedSettings = props.UpdatedSettings,
 			})
 			else e(ModernContent, {
-				OnScrollTargetChanged = onScrollTargetChanged,
+				OnSelectedBoundsChanged = onSelectedBoundsChanged,
 				CurrentSettings = currentSettings,
 				UpdatedSettings = props.UpdatedSettings,
 				HandleAction = props.HandleAction,

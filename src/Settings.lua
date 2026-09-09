@@ -28,6 +28,7 @@ export type SelectionThreshold = "25" | "15" | "Exact"
 export type ResizeAlignSettings = PluginGuiTypes.PluginGuiSettings & {
 	ResizeMode: ResizeMode,
 	AcuteWedgeJoin: boolean,
+	UseCylinderForRoundedJoin: boolean,
 	ArcJoin: ArcJoinOptions,
 	SelectionThreshold: SelectionThreshold,
 	ClassicUI: boolean,
@@ -58,6 +59,7 @@ local function loadSettings(plugin: Plugin): ResizeAlignSettings
 
 		ArcJoin = arcJoin,
 		ResizeMode = if raw.ResizeMode ~= nil then raw.ResizeMode else "OuterTouch",
+		UseCylinderForRoundedJoin = if raw.UseCylinderForRoundedJoin ~= nil then raw.UseCylinderForRoundedJoin else true,
 		AcuteWedgeJoin = if raw.AcuteWedgeJoin ~= nil then raw.AcuteWedgeJoin else true,
 		SelectionThreshold = if raw.SelectionThreshold ~= nil then raw.SelectionThreshold else "25",
 		ClassicUI = if raw.ClassicUI ~= nil then raw.ClassicUI else false,
@@ -78,6 +80,7 @@ local function saveSettings(plugin: Plugin, settings: ResizeAlignSettings)
 		ResizeMode = settings.ResizeMode,
 		ArcJoin = settings.ArcJoin,
 		AcuteWedgeJoin = settings.AcuteWedgeJoin,
+		UseCylinderForRoundedJoin = settings.UseCylinderForRoundedJoin,
 		SelectionThreshold = settings.SelectionThreshold,
 		ClassicUI = settings.ClassicUI,
 	})
