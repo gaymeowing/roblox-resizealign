@@ -89,7 +89,6 @@ local function ModeButton(props: {
 end
 
 local function ExpandableModeButton(props: {
-	-- ReactNode's recursive type is invariant across component boundaries.
 	ButtonComponent: any,
 	ButtonProps: any,
 	ExpandedContent: any,
@@ -151,13 +150,13 @@ local function ExpandableModeButton(props: {
 					}, {
 						Layout = e("UIListLayout", {
 							SortOrder = Enum.SortOrder.LayoutOrder,
-							Padding = UDim.new(0, 4),
+							Padding = UDim.new(0, 6),
 						}),
 						PaddingInset = e("UIPadding", {
-							PaddingTop = UDim.new(0, 4),
-							PaddingBottom = UDim.new(0, 8),
-							PaddingLeft = UDim.new(0, 8),
-							PaddingRight = UDim.new(0, 8),
+							PaddingTop = UDim.new(0, if props.ShowOutline then 6 else 6),
+							PaddingBottom = UDim.new(0, if props.ShowOutline then 7 else 4),
+							PaddingLeft = UDim.new(0, if props.ShowOutline then 8 else 4),
+							PaddingRight = UDim.new(0, if props.ShowOutline then 8 else 4),
 						}),
 						Options = expandedContent,
 					}),
