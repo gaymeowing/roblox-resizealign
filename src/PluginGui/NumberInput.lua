@@ -102,7 +102,6 @@ local function NumberInput(props: {
 			Text = textFitsAtNormalSize and displayText or " " .. displayText,
 			TextColor3 = Colors.WHITE,
 			RichText = true,
-			ClearTextOnFocus = false,
 			BackgroundColor3 = Colors.GREY,
 			Size = UDim2.new(0, 0, 0, 24),
 			Font = Enum.Font.RobotoMono,
