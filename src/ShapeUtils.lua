@@ -24,8 +24,6 @@ end
 
 export type ArcSegment = { CFrame: CFrame, Size: Vector3 }
 
-local MAX_SEGMENTS = 512
-
 local function rotateAlong(rotation: CFrame, from: Vector3, to: Vector3, localNormal: Vector3): CFrame
 	local axis = from:Cross(to)
 	local dot = math.clamp(from:Dot(to), -1, 1)
@@ -54,7 +52,7 @@ local function getArcTargetPoint(
 	targetSize: Vector3,
 	localNormal: Vector3,
 	targetLocalNormal: Vector3
-): Vector3
+): (Vector3, Vector3)
 	local up = if math.abs(targetLocalNormal.Y) < 0.5 then Vector3.yAxis else Vector3.zAxis
 	local targetUp = targetFrame:VectorToWorldSpace(up)
 	local endNormal = targetFrame:VectorToWorldSpace(targetLocalNormal)
@@ -72,7 +70,7 @@ local function getArcTargetPoint(
 	local separation = targetFrame.Position - startFrame.Position
 	local relativeHeight = separation:Dot(commonUp) * (if radius > targetRadius then 1 else -1)
 	local side = if relativeHeight >= 0 then 1 else -1
-	return targetFrame.Position + targetUp * (side * offset)
+	return targetFrame.Position + targetUp * (side * offset), rotation:VectorToObjectSpace(targetUp * (side * radius))
 end
 
 local function pointAt(startPoint: Vector3, controlA: Vector3, controlB: Vector3, endPoint: Vector3, t: number): Vector3
@@ -102,6 +100,121 @@ local function tangentPoint(origin: Vector3, normal: Vector3, a: Vector3, b: Vec
 	return origin + normal * reach
 end
 
+local function intersectArcTangents(a: Vector3, directionA: Vector3, b: Vector3, directionB: Vector3): Vector3
+	local separation = b - a
+	local normal = directionA:Cross(directionB)
+	local denominator = normal:Dot(normal)
+	if denominator > 1e-10 then
+		local reachA = separation:Cross(directionB):Dot(normal) / denominator
+		local reachB = directionA:Cross(separation):Dot(normal) / denominator
+		local limit = separation.Magnitude * 2
+		if reachA >= 0 and reachB >= 0 and reachA <= limit and reachB <= limit then
+			return a + directionA * reachA
+		end
+	end
+	-- Across an inflection the tangent intersection can lie behind an endpoint
+	-- or arbitrarily far away. Keep that joint inside the sampled interval.
+	return (a + b) / 2
+end
+
+local function distanceToSegmentSquared(point: Vector3, a: Vector3, b: Vector3): number
+	local chord = b - a
+	local lengthSquared = chord:Dot(chord)
+	local t = if lengthSquared > 0 then math.clamp((point - a):Dot(chord) / lengthSquared, 0, 1) else 0
+	local difference = point - (a + chord * t)
+	return difference:Dot(difference)
+end
+
+local function surfaceIntervalError(
+	left: number,
+	right: number,
+	startPoint: Vector3,
+	controlA: Vector3,
+	controlB: Vector3,
+	endPoint: Vector3
+): number
+	local a = pointAt(startPoint, controlA, controlB, endPoint, left)
+	local b = pointAt(startPoint, controlA, controlB, endPoint, right)
+	local joint = intersectArcTangents(
+		a,
+		tangentAt(startPoint, controlA, controlB, endPoint, left),
+		b,
+		tangentAt(startPoint, controlA, controlB, endPoint, right)
+	)
+	local errorSquared = 0
+	for quarter = 1, 3 do
+		local point = pointAt(startPoint, controlA, controlB, endPoint, left + (right - left) * quarter / 4)
+		errorSquared = math.max(
+			errorSquared,
+			math.min(distanceToSegmentSquared(point, a, joint), distanceToSegmentSquared(point, joint, b))
+		)
+	end
+	return errorSquared
+end
+
+local function refineSurfaceSamples(
+	parameters: { number },
+	startPoint: Vector3,
+	controlA: Vector3,
+	controlB: Vector3,
+	endPoint: Vector3,
+	errorLimit: number,
+	turnAxis: Vector3
+): { number }
+	local subdivided: boolean
+
+	repeat
+		subdivided = false
+		local refined = { parameters[1] }
+		for i = 1, #parameters - 1 do
+			local left, right = parameters[i], parameters[i + 1]
+			local middle = (left + right) / 2
+			local a = pointAt(startPoint, controlA, controlB, endPoint, left)
+			local b = pointAt(startPoint, controlA, controlB, endPoint, right)
+			local midpoint = pointAt(startPoint, controlA, controlB, endPoint, middle)
+			local errorSquared = surfaceIntervalError(left, right, startPoint, controlA, controlB, endPoint)
+			if
+				errorSquared > errorLimit * errorLimit
+				and middle > left
+				and middle < right
+				and midpoint ~= a
+				and midpoint ~= b
+			then
+				refined[#refined + 1] = middle
+				subdivided = true
+			end
+			refined[#refined + 1] = right
+		end
+		parameters = refined
+	until not subdivided
+
+	-- Keep both endpoint transitions; omit redundant samples on the crest.
+	if #parameters < 5 then
+		return parameters
+	end
+
+	local simplified = { parameters[1], parameters[2] }
+
+	for i = 3, #parameters - 2 do
+		local left, middle, right = simplified[#simplified], parameters[i], parameters[i + 1]
+		local a = tangentAt(startPoint, controlA, controlB, endPoint, left)
+		local b = tangentAt(startPoint, controlA, controlB, endPoint, middle)
+		local c = tangentAt(startPoint, controlA, controlB, endPoint, right)
+		local redundant = a:Cross(b):Dot(turnAxis) >= 0
+			and b:Cross(c):Dot(turnAxis) >= 0
+			and a:Dot(c) >= math.cos(math.rad(15))
+			and surfaceIntervalError(left, right, startPoint, controlA, controlB, endPoint)
+				<= errorLimit * errorLimit
+		if not redundant then
+			simplified[#simplified + 1] = middle
+		end
+	end
+	simplified[#simplified + 1] = parameters[#parameters - 1]
+	simplified[#simplified + 1] = parameters[#parameters]
+
+	return simplified
+end
+
 local function miterExtension(rotation: CFrame, halfSection: Vector3, direction: Vector3, plane: Vector3): number
 	local denominator = math.abs(direction:Dot(plane))
 	if denominator < 1e-6 then
@@ -110,39 +223,19 @@ local function miterExtension(rotation: CFrame, halfSection: Vector3, direction:
 	return crossSectionRadius(rotation, halfSection, plane) / denominator
 end
 
--- startFrame retains the first part's local axes at its selected face.
--- Both normals point OUT of the selected parts.
--- A cubic circular-arc approximation also accommodates unequal radii and
--- non-coplanar endpoints, where a single tangent circle cannot connect them.
-local function planArcJoin(
-	startFrame: CFrame,
+local function arcHandles(
+	startPoint: Vector3,
 	endPoint: Vector3,
+	startNormal: Vector3,
 	endNormal: Vector3,
-	size: Vector3,
-	localNormal: Vector3,
-	requestedSegments: number?
-): { ArcSegment }?
-	local startPoint = startFrame.Position
-	local startNormal = startFrame:VectorToWorldSpace(localNormal)
+	angle: number,
+	cross: Vector3,
+	crossSquared: number
+): (number, number, Vector3?)
 	local distance = (endPoint - startPoint).Magnitude
-
-	if distance < 0.001 then
-		return nil
-	end
-
-	if
-		requestedSegments ~= nil
-		and (requestedSegments % 1 ~= 0 or requestedSegments < 1 or requestedSegments > MAX_SEGMENTS)
-	then
-		return nil
-	end
-
-	local angle = math.acos(math.clamp(-startNormal:Dot(endNormal), -1, 1))
 	local handleLength = 2 * distance / (3 * (1 + math.cos(angle / 2)))
 	local handleA, handleB = handleLength, handleLength
 	local tangentCorner: Vector3? = nil
-	local cross = startNormal:Cross(endNormal)
-	local crossSquared = cross:Dot(cross)
 
 	if crossSquared > 1e-10 then
 		local separation = endPoint - startPoint
@@ -157,12 +250,54 @@ local function planArcJoin(
 		end
 	end
 
+	return handleA, handleB, tangentCorner
+end
+
+-- startFrame retains the first part's local axes at its selected face.
+-- Both normals point OUT of the selected parts.
+-- A cubic circular-arc approximation also accommodates unequal radii and
+-- non-coplanar endpoints, where a single tangent circle cannot connect them.
+local function planArcJoin(
+	startFrame: CFrame,
+	endPoint: Vector3,
+	endNormal: Vector3,
+	size: Vector3,
+	localNormal: Vector3,
+	requestedSegments: number?,
+	surfaceOffset: Vector3?
+): { ArcSegment }?
+	local startPoint = startFrame.Position
+	local startNormal = startFrame:VectorToWorldSpace(localNormal)
+	local distance = (endPoint - startPoint).Magnitude
+
+	if distance < 0.001 then
+		return nil
+	end
+
+	local angle = math.acos(math.clamp(-startNormal:Dot(endNormal), -1, 1))
+	local cross = startNormal:Cross(endNormal)
+	local crossSquared = cross:Dot(cross)
+	local planar = crossSquared > 1e-10 and math.abs((endPoint - startPoint):Dot(cross.Unit)) < 0.0001
+	local handleA, handleB, tangentCorner =
+		arcHandles(startPoint, endPoint, startNormal, endNormal, angle, cross, crossSquared)
+	local guideOffset = Vector3.zero
+	if surfaceOffset and planar and tangentCorner == nil then
+		-- Fitting a tight reverse bend through the centers makes its visible
+		-- edge curl more sharply as the template gets taller. Fit that edge
+		-- directly, then offset each clone back by its unchanged thickness.
+		guideOffset = surfaceOffset
+		startPoint += startFrame:VectorToWorldSpace(guideOffset)
+		local endRotation = rotateAlong(startFrame.Rotation, startNormal, -endNormal, localNormal)
+		endPoint += endRotation:VectorToWorldSpace(guideOffset)
+		handleA, handleB, tangentCorner =
+			arcHandles(startPoint, endPoint, startNormal, endNormal, angle, cross, crossSquared)
+	end
+
 	local controlA = startPoint + startNormal * handleA
 	local controlB = endPoint + endNormal * handleB
 
 	-- Balance chord error against turning angle: broad shallow bends need
 	-- subdivision too, while tight bends still need a limit on each turn.
-	local planar = crossSquared > 1e-10 and math.abs((endPoint - startPoint):Dot(cross.Unit)) < 0.0001
 	local dimension = Vector3.new(math.abs(localNormal.X), math.abs(localNormal.Y), math.abs(localNormal.Z))
 	local templateLength = size:Dot(dimension)
 	local samples = math.max(128, (requestedSegments or 0) * 4)
@@ -197,33 +332,35 @@ local function planArcJoin(
 	measures[samples + 1] = totalMeasure
 	local turnSegments = math.ceil(totalTurn / math.rad(5))
 
-	if tangentCorner == nil then
-		-- Tight reverse bends can accumulate a large turn over a tiny distance.
-		-- Bound their detail by chord error relative to the clone cross-section,
-		-- rather than allocating a part for every five degrees of that turn.
-		local axisA, axisB = otherNormals(localNormal)
-		local errorLimit = math.min(size:Dot(axisA), size:Dot(axisB)) * 0.0015
-		local errorSegments = math.ceil(math.sqrt(totalLength * totalTurn / (8 * errorLimit)))
-		turnSegments = math.min(turnSegments, errorSegments)
-	end
+	-- Angle alone overestimates detail on small bends. Estimate chord error
+	-- relative to the width across the bend plane, which also keeps detail
+	-- consistent when the selected ends have different heights.
+	local axisA, axisB = otherNormals(localNormal)
+	local width = if crossSquared > 1e-10
+		then 2 * crossSectionRadius(startFrame, size * (Vector3.one - dimension) / 2, cross.Unit)
+		else math.min(size:Dot(axisA), size:Dot(axisB))
+	local errorLimit = width * (if guideOffset ~= Vector3.zero then 0.003 else 0.002)
+	local errorSegments = math.ceil(math.sqrt(totalLength * totalTurn / (8 * errorLimit)))
+	turnSegments = math.min(turnSegments, errorSegments)
 
 	-- Reserve the two tangent segments without making every sample a clone.
 	local count = requestedSegments
-		or math.clamp(
-			math.max(
-				math.ceil(totalLength / templateLength),
-				if turnSegments > 1 then turnSegments + 1 else turnSegments
-			),
+		or math.max(
 			1,
-			MAX_SEGMENTS
+			math.ceil(totalLength / templateLength),
+			if turnSegments > 1 then turnSegments + 1 else turnSegments
 		)
-	local points = { startPoint }
+	local parameters = { 0 }
 	local sample = 1
 	local tangentSegments = planar and count >= 3
-	local previousTangentPoint, previousTangent = startPoint, startNormal
-
 	for i = 1, if tangentSegments then count - 1 else count do
-		local targetMeasure = totalMeasure * i / (if tangentSegments then count - 1 else count)
+		local progress = i / (if tangentSegments then count - 1 else count)
+		-- Reverse bends need smaller direction changes where they meet the
+		-- selected parts. Redistribute the existing samples toward both ends.
+		if tangentSegments and tangentCorner == nil then
+			progress = (progress + progress * progress * (3 - 2 * progress)) / 2
+		end
+		local targetMeasure = totalMeasure * progress
 
 		while sample < samples and measures[sample + 1] < targetMeasure do
 			sample += 1
@@ -232,22 +369,25 @@ local function planArcJoin(
 		local span = measures[sample + 1] - measures[sample]
 		local fraction = if span > 0 then (targetMeasure - measures[sample]) / span else 0
 		local t = math.clamp((sample - 1 + fraction) / samples, 0, 1)
+		parameters[i + 1] = t
+	end
+	parameters[#parameters] = 1
+	if tangentSegments and requestedSegments == nil and guideOffset ~= Vector3.zero then
+		-- Refine only intervals whose visible edge is too far from the curve.
+		parameters = refineSurfaceSamples(parameters, startPoint, controlA, controlB, endPoint, errorLimit, -cross)
+		count = #parameters
+	end
+	local points = { startPoint }
+	local previousTangentPoint, previousTangent = startPoint, startNormal
+	for i = 2, #parameters do
+		local t = parameters[i]
 		local point = pointAt(startPoint, controlA, controlB, endPoint, t)
-
 		if tangentSegments then
-			-- Intersect successive tangents to the same curve, including its
-			-- endpoint tangents. This avoids spending two samples on end caps
-			-- and then forcing their neighbors into a larger, sharper turn.
 			local tangent = tangentAt(startPoint, controlA, controlB, endPoint, t)
-			local normal = previousTangent:Cross(tangent)
-			local denominator = normal:Dot(normal)
-			points[i + 1] = if denominator > 1e-10
-				then previousTangentPoint
-					+ previousTangent * ((point - previousTangentPoint):Cross(tangent):Dot(normal) / denominator)
-				else (previousTangentPoint + point) / 2
+			points[i] = intersectArcTangents(previousTangentPoint, previousTangent, point, tangent)
 			previousTangentPoint, previousTangent = point, tangent
 		else
-			points[i + 1] = if i == count then endPoint else point
+			points[i] = point
 		end
 	end
 	points[count + 1] = endPoint
@@ -272,15 +412,11 @@ local function planArcJoin(
 		local point = points[i + 1]
 		local chord = point - previousPoint
 		local length = chord.Magnitude
-		-- Roblox would clamp these sizes, breaking the join. Reject the whole
-		-- plan before resizing either source part or creating any clones.
-		if not math.isfinite(length) or length < 0.001 or length > 2048 then
-			return nil
-		end
+
 		local direction = chord.Unit
 		rotation = rotateAlong(rotation, previousDirection, direction, localNormal)
 		segments[i] = {
-			CFrame = CFrame.new((previousPoint + point) / 2) * rotation,
+			CFrame = CFrame.new((previousPoint + point) / 2 - rotation:VectorToWorldSpace(guideOffset)) * rotation,
 			Size = size + dimension * (length - templateLength),
 		}
 		previousPoint = point
@@ -300,17 +436,17 @@ local function planArcJoin(
 		local startPlane = if i == 1 then startNormal else previousDirection + direction
 		local endPlane = if i == count then -endNormal else direction + nextDirection
 
+		local offset = segment.CFrame:VectorToWorldSpace(guideOffset)
 		local startReach = miterExtension(segment.CFrame, halfSection, direction, startPlane)
+			- offset:Dot(startPlane) / direction:Dot(startPlane)
 		local endReach = miterExtension(segment.CFrame, halfSection, direction, endPlane)
+			+ offset:Dot(endPlane) / direction:Dot(endPlane)
 		local chordLength = segment.Size:Dot(dimension)
 		-- On a tight bend the inner miter corner can pass the OTHER end of
 		-- a short chord. Cover both complete miter sections, including that case.
 		local before = if i == 1 and count > 1 then 0 else math.max(startReach, endReach - chordLength)
 		local after = if i == count and count > 1 then 0 else math.max(endReach, startReach - chordLength)
-		local length = chordLength + before + after
-		if not math.isfinite(length) or length > 2048 then
-			return nil
-		end
+
 		segment.Size += dimension * (before + after)
 		segment.CFrame += direction * ((after - before) / 2)
 		previousDirection = direction
@@ -319,7 +455,6 @@ local function planArcJoin(
 end
 
 return {
-	maxArcSegments = MAX_SEGMENTS,
 	planArcJoin = planArcJoin,
 	getArcTargetPoint = getArcTargetPoint,
 	otherNormals = otherNormals,

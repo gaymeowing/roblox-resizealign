@@ -401,7 +401,7 @@ local function createArcJoin(
 	local pointB, normalB = getBasis(faceB)
 	local startPoint = pointA + normalA * paddingA
 	local startFrame = CFrame.new(startPoint) * faceA.Object.CFrame.Rotation
-	local endPoint = ShapeUtils.getArcTargetPoint(
+	local endPoint, surfaceOffset = ShapeUtils.getArcTargetPoint(
 		startFrame,
 		CFrame.new(pointB + normalB * paddingB) * faceB.Object.CFrame.Rotation,
 		faceA.Object.Size,
@@ -423,7 +423,8 @@ local function createArcJoin(
 		normalB,
 		faceA.Object.Size,
 		Vector3.fromNormalId(faceA.Normal),
-		segmentCount
+		segmentCount,
+		if allowShrink then nil else surfaceOffset
 	)
 	if not segments then
 		error("Arc Join: the segment count or resulting segment sizes cannot form a join.")

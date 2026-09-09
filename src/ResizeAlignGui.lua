@@ -16,7 +16,6 @@ local Checkbox = require("./PluginGui/Checkbox")
 local Settings = require("./Settings")
 local ModeOptionsPanel = require("./ModeOptionsPanel")
 local NumberInput = require("./PluginGui/NumberInput")
-local ShapeUtils = require("./ShapeUtils")
 local ModeDemo = require("./ModeDemo")
 local PluginGuiTypes = require("./PluginGui/Types")
 local FaceHighlight = require("./FaceHighlight")
@@ -100,7 +99,7 @@ local function ArcJoinOptions(props: {
 			Value = options.Segments,
 			LayoutOrder = 2,
 			ValueEntered = function(value: number): number
-				if value % 1 == 0 and value >= 1 and value <= ShapeUtils.maxArcSegments then
+				if value % 1 == 0 and value >= 1 then
 					options.Segments = value
 					options.AutomaticSegments = false
 					props.UpdatedSettings()

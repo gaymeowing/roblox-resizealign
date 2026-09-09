@@ -29,6 +29,35 @@ local function jointBetween(a: Segment, b: Segment, normal: Vector3): (Vector3, 
 	return joint, direction, nextDirection
 end
 
+local function overlapOnAxis(a: Segment, b: Segment, axis: Vector3)
+	if axis.Magnitude < 0.000001 then
+		return
+	end
+	axis = axis.Unit
+	local radiusA = a.CFrame:VectorToObjectSpace(axis):Abs():Dot(a.Size) / 2
+	local radiusB = b.CFrame:VectorToObjectSpace(axis):Abs():Dot(b.Size) / 2
+	assert(
+		math.abs((b.CFrame.Position - a.CFrame.Position):Dot(axis)) <= radiusA + radiusB + 0.0001,
+		"Adjacent segments have a separating gap"
+	)
+end
+
+local function checkOverlap(a: Segment, b: Segment)
+	local axesA = { a.CFrame.XVector, a.CFrame.YVector, a.CFrame.ZVector }
+	local axesB = { b.CFrame.XVector, b.CFrame.YVector, b.CFrame.ZVector }
+	for _, axis in axesA do
+		overlapOnAxis(a, b, axis)
+	end
+	for _, axis in axesB do
+		overlapOnAxis(a, b, axis)
+	end
+	for _, axisA in axesA do
+		for _, axisB in axesB do
+			overlapOnAxis(a, b, axisA:Cross(axisB))
+		end
+	end
+end
+
 local function checkPlan(segments: { Segment }, first: Vector3, last: Vector3, normal: Vector3, size: Vector3)
 	local crossSection = Vector3.one - Vector3.new(math.abs(normal.X), math.abs(normal.Y), math.abs(normal.Z))
 	inside(segments[1], first)
@@ -36,9 +65,7 @@ local function checkPlan(segments: { Segment }, first: Vector3, last: Vector3, n
 	for i, segment in segments do
 		near(segment.Size * crossSection, size * crossSection)
 		if i < #segments then
-			local joint = jointBetween(segment, segments[i + 1], normal)
-			inside(segment, joint)
-			inside(segments[i + 1], joint)
+			checkOverlap(segment, segments[i + 1])
 		end
 	end
 end
@@ -250,15 +277,99 @@ return function(t: TestContext)
 				local start, target, size, targetSize, normal, targetNormal = tiltedJoin(reverse, 1)
 				start += start:VectorToWorldSpace(normal) * padding
 				target += target:VectorToWorldSpace(targetNormal) * padding
-				local finish = ShapeUtils.getArcTargetPoint(start, target, size, targetSize, normal, targetNormal)
+				local finish, surfaceOffset =
+					ShapeUtils.getArcTargetPoint(start, target, size, targetSize, normal, targetNormal)
 				local endNormal = target:VectorToWorldSpace(targetNormal)
-				local segments = assert(ShapeUtils.planArcJoin(start, finish, endNormal, size, normal))
+				local segments =
+					assert(ShapeUtils.planArcJoin(start, finish, endNormal, size, normal, nil, surfaceOffset))
 				assert(#segments <= 13, `Padding {padding} generated {#segments} segments`)
 				checkPlan(segments, start.Position, finish, normal, size)
 				near(segments[1].CFrame:VectorToWorldSpace(normal), start:VectorToWorldSpace(normal))
 				near(segments[#segments].CFrame:VectorToWorldSpace(normal), -endNormal)
 			end
 		end
+	end)
+
+	t.test("ArcJoin: C-first padding keeps inflection segments inside the join", function()
+		for _, offset in { Vector3.zero, Vector3.new(-10, 20.85, 2.5) } do
+			for _, padding in { 0.5999, 0.6, 0.6001 } do
+				local start, target, size, targetSize, normal, targetNormal = tiltedJoin(false, 1)
+				start += offset + start:VectorToWorldSpace(normal) * padding
+				target += offset + target:VectorToWorldSpace(targetNormal) * padding
+				local finish, surfaceOffset =
+					ShapeUtils.getArcTargetPoint(start, target, size, targetSize, normal, targetNormal)
+				local segments = assert(
+					ShapeUtils.planArcJoin(
+						start,
+						finish,
+						target:VectorToWorldSpace(targetNormal),
+						size,
+						normal,
+						nil,
+						surfaceOffset
+					)
+				)
+				local gap = (finish - start.Position).Magnitude
+				for _, segment in segments do
+					-- These connected segments were over 40 studs long in a gap
+					-- under one stud: endpoint and overlap checks alone passed.
+					assert(segment.Size.X <= gap, `Inflection produced a {segment.Size.X}-stud spike`)
+					assert(
+						(segment.CFrame.Position - start.Position).Magnitude <= gap + size.Y / 2,
+						"Inflection moved a segment outside the join"
+					)
+				end
+				checkPlan(segments, start.Position, finish, normal, size)
+				assert(#segments <= 11, "The small padded join should not regain excessive detail")
+			end
+		end
+	end)
+
+	t.test("ArcJoin: padded E/C detail stays similar in either selection order", function()
+		local counts = {}
+		for _, reverse in { false, true } do
+			local start, target, size, targetSize, normal, targetNormal = tiltedJoin(reverse, 1)
+			start += start:VectorToWorldSpace(normal) * 0.6
+			target += target:VectorToWorldSpace(targetNormal) * 0.6
+			local finish, surfaceOffset =
+				ShapeUtils.getArcTargetPoint(start, target, size, targetSize, normal, targetNormal)
+			local segments = assert(
+				ShapeUtils.planArcJoin(
+					start,
+					finish,
+					target:VectorToWorldSpace(targetNormal),
+					size,
+					normal,
+					nil,
+					surfaceOffset
+				)
+			)
+			if reverse then
+				local endDirection = segments[#segments].CFrame:VectorToWorldSpace(normal)
+				local previousDirection = segments[#segments - 1].CFrame:VectorToWorldSpace(normal)
+				assert(
+					math.acos(math.clamp(endDirection:Dot(previousDirection), -1, 1)) <= math.rad(7),
+					"The E-first curve must meet C gently"
+				)
+			end
+			local previous = start:VectorToWorldSpace(normal)
+			for _, segment in segments do
+				local direction = segment.CFrame:VectorToWorldSpace(normal)
+				assert(
+					math.acos(math.clamp(previous:Dot(direction), -1, 1)) <= math.rad(15),
+					"Surface fitting must not concentrate the bend into a sharp block corner"
+				)
+				assert(
+					segment.CFrame.RightVector.Y <= math.sin(math.rad(16)),
+					"The tall template must not amplify the small reverse bend into a large bulge"
+				)
+				previous = direction
+			end
+			table.insert(counts, #segments)
+		end
+		assert(math.abs(counts[1] - counts[2]) <= 1, "Selecting C first should not add unnecessary detail")
+		t.expect(counts[1]).toBe(8)
+		t.expect(counts[2]).toBe(8)
 	end)
 
 	t.test("ArcJoin: all six template faces keep their cross sections", function()
@@ -285,6 +396,25 @@ return function(t: TestContext)
 		t.expect(#long > #straight).toBe(true)
 		t.expect(#curved >= 9).toBe(true)
 		checkPlan(straight, Vector3.zero, Vector3.new(8, 0, 0), Vector3.xAxis, size)
+	end)
+
+	t.test("ArcJoin: large gaps and manual counts can exceed 512 segments", function()
+		local size = Vector3.new(4, 2, 3)
+		local finish = Vector3.new(4096, 0, 0)
+		local automatic = assert(ShapeUtils.planArcJoin(CFrame.identity, finish, -Vector3.xAxis, size, Vector3.xAxis))
+		t.expect(#automatic).toBe(1024)
+		local manual = assert(ShapeUtils.planArcJoin(CFrame.identity, finish, -Vector3.xAxis, size, Vector3.xAxis, 768))
+		t.expect(#manual).toBe(768)
+		for _, segments in { automatic, manual } do
+			local length = 0
+			for _, segment in segments do
+				assert(segment.Size.X <= 2048, "The gap must be divided into valid part sizes")
+				length += segment.Size.X
+			end
+			t.expect(length).toBe(finish.X)
+			inside(segments[1], Vector3.zero)
+			inside(segments[#segments], finish)
+		end
 	end)
 
 	t.test("ArcJoin: skew and same-facing endpoints remain connected", function()
@@ -355,7 +485,7 @@ return function(t: TestContext)
 	end)
 
 	t.test("ArcJoin: invalid counts and excessive padding leave sources untouched", function()
-		for _, count in { 0, -1, 1.5, math.huge, 0 / 0, ShapeUtils.maxArcSegments + 1 } do
+		for _, count in { 0, -1, 1.5, math.huge, 0 / 0 } do
 			withParts(function(folder, a, b, faceA, faceB)
 				local options = table.clone(Settings.DefaultArcJoinOptions)
 				options.AutomaticSegments = false
