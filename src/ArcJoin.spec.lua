@@ -244,6 +244,23 @@ return function(t: TestContext)
 		end
 	end)
 
+	t.test("ArcJoin: padding does not oversample tiny reverse bends", function()
+		for _, reverse in { false, true } do
+			for _, padding in { 0.2, 0.3, 0.4, 0.5, 0.6 } do
+				local start, target, size, targetSize, normal, targetNormal = tiltedJoin(reverse, 1)
+				start += start:VectorToWorldSpace(normal) * padding
+				target += target:VectorToWorldSpace(targetNormal) * padding
+				local finish = ShapeUtils.getArcTargetPoint(start, target, size, targetSize, normal, targetNormal)
+				local endNormal = target:VectorToWorldSpace(targetNormal)
+				local segments = assert(ShapeUtils.planArcJoin(start, finish, endNormal, size, normal))
+				assert(#segments <= 13, `Padding {padding} generated {#segments} segments`)
+				checkPlan(segments, start.Position, finish, normal, size)
+				near(segments[1].CFrame:VectorToWorldSpace(normal), start:VectorToWorldSpace(normal))
+				near(segments[#segments].CFrame:VectorToWorldSpace(normal), -endNormal)
+			end
+		end
+	end)
+
 	t.test("ArcJoin: all six template faces keep their cross sections", function()
 		for _, normalId in Enum.NormalId:GetEnumItems() do
 			local normal = Vector3.fromNormalId(normalId)

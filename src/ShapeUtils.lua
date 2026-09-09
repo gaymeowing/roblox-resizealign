@@ -125,9 +125,11 @@ local function planArcJoin(
 	local startPoint = startFrame.Position
 	local startNormal = startFrame:VectorToWorldSpace(localNormal)
 	local distance = (endPoint - startPoint).Magnitude
-	if not math.isfinite(distance) or distance < 0.001 then
+
+	if distance < 0.001 then
 		return nil
 	end
+
 	if
 		requestedSegments ~= nil
 		and (requestedSegments % 1 ~= 0 or requestedSegments < 1 or requestedSegments > MAX_SEGMENTS)
@@ -141,6 +143,7 @@ local function planArcJoin(
 	local tangentCorner: Vector3? = nil
 	local cross = startNormal:Cross(endNormal)
 	local crossSquared = cross:Dot(cross)
+
 	if crossSquared > 1e-10 then
 		local separation = endPoint - startPoint
 		local reachA = separation:Cross(endNormal):Dot(cross) / crossSquared
@@ -153,12 +156,13 @@ local function planArcJoin(
 			tangentCorner = (startPoint + startNormal * reachA + endPoint + endNormal * reachB) / 2
 		end
 	end
+
 	local controlA = startPoint + startNormal * handleA
 	local controlB = endPoint + endNormal * handleB
 
 	-- Balance chord error against turning angle: broad shallow bends need
 	-- subdivision too, while tight bends still need a limit on each turn.
-	local planar = tangentCorner ~= nil and math.abs((endPoint - startPoint):Dot(cross.Unit)) < 0.0001
+	local planar = crossSquared > 1e-10 and math.abs((endPoint - startPoint):Dot(cross.Unit)) < 0.0001
 	local dimension = Vector3.new(math.abs(localNormal.X), math.abs(localNormal.Y), math.abs(localNormal.Z))
 	local templateLength = size:Dot(dimension)
 	local samples = math.max(128, (requestedSegments or 0) * 4)
@@ -167,6 +171,7 @@ local function planArcJoin(
 	local previousDirection = startNormal
 	local totalMeasure = 0
 	local totalLength, totalTurn = 0, 0
+
 	for i = 1, samples do
 		local point = pointAt(startPoint, controlA, controlB, endPoint, i / samples)
 		local chord = point - previousPoint
@@ -185,11 +190,23 @@ local function planArcJoin(
 		measures[i + 1] = totalMeasure
 		previousPoint = point
 	end
+
 	local endTurn = math.acos(math.clamp(previousDirection:Dot(-endNormal), -1, 1))
 	totalTurn += endTurn
 	totalMeasure += endTurn * 2
 	measures[samples + 1] = totalMeasure
 	local turnSegments = math.ceil(totalTurn / math.rad(5))
+
+	if tangentCorner == nil then
+		-- Tight reverse bends can accumulate a large turn over a tiny distance.
+		-- Bound their detail by chord error relative to the clone cross-section,
+		-- rather than allocating a part for every five degrees of that turn.
+		local axisA, axisB = otherNormals(localNormal)
+		local errorLimit = math.min(size:Dot(axisA), size:Dot(axisB)) * 0.0015
+		local errorSegments = math.ceil(math.sqrt(totalLength * totalTurn / (8 * errorLimit)))
+		turnSegments = math.min(turnSegments, errorSegments)
+	end
+
 	-- Reserve the two tangent segments without making every sample a clone.
 	local count = requestedSegments
 		or math.clamp(
@@ -204,15 +221,19 @@ local function planArcJoin(
 	local sample = 1
 	local tangentSegments = planar and count >= 3
 	local previousTangentPoint, previousTangent = startPoint, startNormal
+
 	for i = 1, if tangentSegments then count - 1 else count do
 		local targetMeasure = totalMeasure * i / (if tangentSegments then count - 1 else count)
+
 		while sample < samples and measures[sample + 1] < targetMeasure do
 			sample += 1
 		end
+
 		local span = measures[sample + 1] - measures[sample]
 		local fraction = if span > 0 then (targetMeasure - measures[sample]) / span else 0
 		local t = math.clamp((sample - 1 + fraction) / samples, 0, 1)
 		local point = pointAt(startPoint, controlA, controlB, endPoint, t)
+
 		if tangentSegments then
 			-- Intersect successive tangents to the same curve, including its
 			-- endpoint tangents. This avoids spending two samples on end caps
@@ -246,6 +267,7 @@ local function planArcJoin(
 	previousPoint = startPoint
 	previousDirection = startNormal
 	local rotation = startFrame.Rotation
+
 	for i = 1, count do
 		local point = points[i + 1]
 		local chord = point - previousPoint
@@ -271,6 +293,7 @@ local function planArcJoin(
 	-- than a fixed overlap that would fail for thicker parts or fewer segments.
 	local halfSection = size * (Vector3.one - dimension) / 2
 	previousDirection = startNormal
+
 	for i, segment in segments do
 		local direction = segment.CFrame:VectorToWorldSpace(localNormal)
 		local nextDirection = if i < count then segments[i + 1].CFrame:VectorToWorldSpace(localNormal) else -endNormal
