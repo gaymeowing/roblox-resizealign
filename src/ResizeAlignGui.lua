@@ -21,6 +21,7 @@ local FaceHighlight = require("./FaceHighlight")
 local doExtend = require("./doExtend")
 
 type Face = doExtend.Face
+type PaddingKey = "Padding" | "PaddingA" | "PaddingB"
 
 local e = React.createElement
 
@@ -87,52 +88,12 @@ local function ModeButton(props: {
 	})
 end
 
-local function ModeOptionsPanel(props: {
-	Name: string,
-	children: { [string]: any }?,
-})
-	-- ReactNode's recursive table type cannot be extended after cloning.
-	local content = {} :: { [string]: any }
-	for name, child in props.children or {} do
-		content[name] = child
-	end
-	content.Layout = e("UIListLayout", {
-		SortOrder = Enum.SortOrder.LayoutOrder,
-		Padding = UDim.new(0, 4),
-	})
-	content.PaddingInset = e("UIPadding", {
-		PaddingTop = UDim.new(0, 4),
-		PaddingBottom = UDim.new(0, 8),
-		PaddingLeft = UDim.new(0, 8),
-		PaddingRight = UDim.new(0, 8),
-	})
-
-	return e("Frame", {
-		Name = props.Name,
-		Size = UDim2.fromScale(1, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundColor3 = Color3.fromRGB(18, 18, 18),
-		BorderSizePixel = 0,
-	}, {
-		Corner = e("UICorner", {
-			TopLeftRadius = UDim.new(),
-			TopRightRadius = UDim.new(),
-			BottomLeftRadius = UDim.new(0, 2),
-			BottomRightRadius = UDim.new(0, 2),
-		}),
-		Content = e("Frame", {
-			Size = UDim2.fromScale(1, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			BackgroundTransparency = 1,
-		}, content),
-	})
-end
-
 local function ExpandableModeButton(props: {
 	-- ReactNode's recursive type is invariant across component boundaries.
 	ButtonComponent: any,
 	ButtonProps: any,
 	ExpandedContent: any,
+	OptionsName: string,
 	ContentInset: number?,
 	ShowOutline: boolean?,
 	LayoutOrder: number?,
@@ -169,13 +130,37 @@ local function ExpandableModeButton(props: {
 				BackgroundTransparency = 1,
 				LayoutOrder = 2,
 			}, {
-				Content = e("Frame", {
+				Panel = e("Frame", {
+					Name = props.OptionsName,
 					Position = UDim2.fromOffset(contentInset, 0),
 					Size = UDim2.new(1, -contentInset, 0, 0),
 					AutomaticSize = Enum.AutomaticSize.Y,
-					BackgroundTransparency = 1,
+					BackgroundColor3 = Color3.fromRGB(18, 18, 18),
+					BorderSizePixel = 0,
 				}, {
-					Content = expandedContent,
+					Corner = e("UICorner", {
+						TopLeftRadius = UDim.new(),
+						TopRightRadius = UDim.new(),
+						BottomLeftRadius = UDim.new(0, 2),
+						BottomRightRadius = UDim.new(0, 2),
+					}),
+					Content = e("Frame", {
+						Size = UDim2.fromScale(1, 0),
+						AutomaticSize = Enum.AutomaticSize.Y,
+						BackgroundTransparency = 1,
+					}, {
+						Layout = e("UIListLayout", {
+							SortOrder = Enum.SortOrder.LayoutOrder,
+							Padding = UDim.new(0, 4),
+						}),
+						PaddingInset = e("UIPadding", {
+							PaddingTop = UDim.new(0, 4),
+							PaddingBottom = UDim.new(0, 8),
+							PaddingLeft = UDim.new(0, 8),
+							PaddingRight = UDim.new(0, 8),
+						}),
+						Options = expandedContent,
+					}),
 				}),
 			}),
 		}),
@@ -198,12 +183,26 @@ local function ExpandableModeButton(props: {
 	})
 end
 
+local function OptionEntry(props: {
+	Content: React.ReactElement<any, any>,
+	HelpText: string,
+	LayoutOrder: number?,
+})
+	return e(HelpGui.WithHelpIcon, {
+		LayoutOrder = props.LayoutOrder,
+		Subject = props.Content,
+		Help = e(HelpGui.BasicTooltip, {
+			HelpRichText = props.HelpText,
+		}),
+	})
+end
+
 local function ArcJoinOptions(props: {
 	Options: Settings.ArcJoinOptions,
 	UpdatedSettings: () -> (),
 })
 	local options = props.Options
-	local function paddingInput(key: "Padding" | "PaddingA" | "PaddingB")
+	local function paddingInput(key: PaddingKey)
 		return e(NumberInput, {
 			Value = options[key],
 			LayoutOrder = 1,
@@ -219,7 +218,7 @@ local function ArcJoinOptions(props: {
 		})
 	end
 
-	local function paddingField(label: string, key: "Padding" | "PaddingA" | "PaddingB", order: number)
+	local function paddingField(label: string, key: PaddingKey, order: number)
 		return e("Frame", {
 			Size = UDim2.new(
 				if options.AdvancedPadding then 0.5 else 1,
@@ -245,93 +244,82 @@ local function ArcJoinOptions(props: {
 		})
 	end
 
-	local content = {
-		AutomaticSegments = e(Checkbox, {
-			Label = "Automatic segments",
-			Checked = options.AutomaticSegments,
+	return React.createElement(React.Fragment, nil, {
+		AutomaticSegments = e(OptionEntry, {
 			LayoutOrder = 1,
-			Changed = function(value: boolean)
-				options.AutomaticSegments = value
-				props.UpdatedSettings()
-			end,
-		}),
-		Segments = not options.AutomaticSegments and e(NumberInput, {
-			Label = "Segments",
-			Value = options.Segments,
-			TextBoxWidth = UDim.new(0.5, -3),
-			LayoutOrder = 2,
-			ValueEntered = function(value: number): number
-				if value % 1 == 0 and value >= 1 then
-					options.Segments = value
-					options.AutomaticSegments = false
+			HelpText = "Choose the number of clones automatically from the arc length and curvature. Turn this off to enter a segment count.",
+			Content = e(Checkbox, {
+				Label = "Automatic segments",
+				Checked = options.AutomaticSegments,
+				Changed = function(value: boolean)
+					options.AutomaticSegments = value
 					props.UpdatedSettings()
-				end
-				return options.Segments
-			end,
-		}),
-		AdvancedPadding = e(Checkbox, {
-			Label = "Advanced padding",
-			Checked = options.AdvancedPadding,
-			LayoutOrder = 3,
-			Changed = function(value: boolean)
-				options.AdvancedPadding = value
-				props.UpdatedSettings()
-			end,
-		}),
-		Padding = e("Frame", {
-			Size = UDim2.new(1, 0, 0, 42),
-			BackgroundTransparency = 1,
-			LayoutOrder = 4,
-		}, {
-			Layout = e("UIListLayout", {
-				FillDirection = Enum.FillDirection.Horizontal,
-				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, 6),
+				end,
 			}),
-			Both = not options.AdvancedPadding and paddingField("Both ends", "Padding", 1),
-			First = options.AdvancedPadding and paddingField("First part", "PaddingA", 1),
-			Second = options.AdvancedPadding and paddingField("Second part", "PaddingB", 2),
 		}),
-	}
-	local help = {
-		AutomaticSegments = "Choose the number of clones automatically from the arc length and curvature. Turn this off to enter a segment count.",
-		Segments = "Number of clones making up the arc. More segments produce a smoother curve.",
-		AdvancedPadding = "Set padding separately for the first and second selected parts. Turn this off to use one value for both ends.",
-		Padding = "Extend the selected parts by this amount before creating the arc. Padding reduces the space the arc spans; zero adds no padding.",
-	}
-	for name, element in content do
-		if element then
-			content[name] = e(HelpGui.WithHelpIcon, {
-				LayoutOrder = element.props.LayoutOrder,
-				Subject = element,
-				Help = e(HelpGui.BasicTooltip, { HelpRichText = help[name] }),
-			})
-		end
-	end
-
-	return e(ModeOptionsPanel, {
-		Name = "ArcJoinOptions",
-	}, content)
+		Segments = not options.AutomaticSegments and e(OptionEntry, {
+			LayoutOrder = 2,
+			HelpText = "Number of clones making up the arc. More segments produce a smoother curve.",
+			Content = e(NumberInput, {
+				Label = "Segments",
+				Value = options.Segments,
+				TextBoxWidth = UDim.new(0.5, -3),
+				ValueEntered = function(value: number): number
+					if value % 1 == 0 and value >= 1 then
+						options.Segments = value
+						options.AutomaticSegments = false
+						props.UpdatedSettings()
+					end
+					return options.Segments
+				end,
+			}),
+		}),
+		AdvancedPadding = e(OptionEntry, {
+			LayoutOrder = 3,
+			HelpText = "Set padding separately for the first and second selected parts. Turn this off to use one value for both ends.",
+			Content = e(Checkbox, {
+				Label = "Advanced padding",
+				Checked = options.AdvancedPadding,
+				Changed = function(value: boolean)
+					options.AdvancedPadding = value
+					props.UpdatedSettings()
+				end,
+			}),
+		}),
+		Padding = e(OptionEntry, {
+			LayoutOrder = 4,
+			HelpText = "Extend the selected parts by this amount before creating the arc. Padding reduces the space the arc spans; zero adds no padding.",
+			Content = e("Frame", {
+				Size = UDim2.new(1, 0, 0, 42),
+				BackgroundTransparency = 1,
+			}, {
+				Layout = e("UIListLayout", {
+					FillDirection = Enum.FillDirection.Horizontal,
+					SortOrder = Enum.SortOrder.LayoutOrder,
+					Padding = UDim.new(0, 6),
+				}),
+				Both = not options.AdvancedPadding and paddingField("Both ends", "Padding", 1),
+				First = options.AdvancedPadding and paddingField("First part", "PaddingA", 1),
+				Second = options.AdvancedPadding and paddingField("Second part", "PaddingB", 2),
+			}),
+		}),
+	})
 end
 
 local function OuterTouchOptions(props: {
 	Settings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
 })
-	return e(ModeOptionsPanel, {
-		Name = "OuterTouchOptions",
-	}, {
-		AcuteWedgeJoin = e(HelpGui.WithHelpIcon, {
-			Subject = e(Checkbox, {
+	return React.createElement(React.Fragment, nil, {
+		AcuteWedgeJoin = e(OptionEntry, {
+			HelpText = "Automatically use Wedge Join instead of Outer Touch when the angle between faces is small to allow the formation of a sharp point for tight corners.",
+			Content = e(Checkbox, {
 				Label = "Wedge Join tight corners",
 				Checked = props.Settings.AcuteWedgeJoin,
 				Changed = function(value: boolean)
 					props.Settings.AcuteWedgeJoin = value
 					props.UpdatedSettings()
 				end,
-			}),
-			Help = e(HelpGui.BasicTooltip, {
-				HelpRichText = "Automatically use Wedge Join instead of Outer Touch when the angle between faces is small to allow the formation of a sharp point for tight corners.",
 			}),
 		}),
 	})
@@ -341,20 +329,16 @@ local function RoundedJoinOptions(props: {
 	Settings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
 })
-	return e(ModeOptionsPanel, {
-		Name = "RoundedJoinOptions",
-	}, {
-		UseCylinderForRoundedJoin = e(HelpGui.WithHelpIcon, {
-			Subject = e(Checkbox, {
+	return React.createElement(React.Fragment, nil, {
+		UseCylinderForRoundedJoin = e(OptionEntry, {
+			HelpText = "Uses a Cylinder part for joining both parts, rather than using an Arc Join.",
+			Content = e(Checkbox, {
 				Label = "Use Cylinder For Join",
 				Checked = props.Settings.UseCylinderForRoundedJoin,
 				Changed = function(value: boolean)
 					props.Settings.UseCylinderForRoundedJoin = value
 					props.UpdatedSettings()
 				end,
-			}),
-			Help = e(HelpGui.BasicTooltip, {
-				HelpRichText = "Uses a Cylinder part for joining both parts, rather than using an Arc Join.",
 			}),
 		}),
 	})
@@ -406,6 +390,7 @@ local function ResizeMethodPanel(props: {
 				end,
 			},
 			LayoutOrder = layoutOrder,
+			OptionsName = mode .. "Options",
 			ContentInset = if props.Settings.HaveHelp then 20 else 0,
 			ShowOutline = true,
 			ExpandedContent = if isCurrent then expandedContent else nil,
@@ -714,6 +699,7 @@ local function ClassicResizeMethodPanel(props: {
 				end,
 			},
 			LayoutOrder = layoutOrder,
+			OptionsName = mode .. "Options",
 			ExpandedContent = content,
 		})
 	end
@@ -737,7 +723,7 @@ local function ClassicResizeMethodPanel(props: {
 			"RoundedJoin",
 			"Rounded Join",
 			"rounded arc or cylinder filler",
-			5,
+			4,
 			e(RoundedJoinOptions, {
 				Settings = props.Settings,
 				UpdatedSettings = props.UpdatedSettings,
@@ -747,15 +733,15 @@ local function ClassicResizeMethodPanel(props: {
 			"ArcJoin",
 			"Arc Join",
 			"connect with an arc of clones",
-			7,
+			5,
 			e(ArcJoinOptions, {
 				Options = props.Settings.ArcJoin,
 				UpdatedSettings = props.UpdatedSettings,
 			})
 		),
-		ButtJoint = makeButton("ButtJoint", "Butt Joint", "butt up against second face", 9),
-		ExtendUpTo = makeButton("ExtendUpTo", "Extend Up To", "extend to first contact", 10),
-		ExtendInto = makeButton("ExtendInto", "Extend Into", "extend to full penetration", 11),
+		ButtJoint = makeButton("ButtJoint", "Butt Joint", "butt up against second face", 6),
+		ExtendUpTo = makeButton("ExtendUpTo", "Extend Up To", "extend to first contact", 7),
+		ExtendInto = makeButton("ExtendInto", "Extend Into", "extend to full penetration", 8),
 	})
 end
 

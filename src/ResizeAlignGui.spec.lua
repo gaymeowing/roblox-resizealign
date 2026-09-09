@@ -98,7 +98,7 @@ return function(t: TestContext)
 							t.expect(row.LayoutOrder).toBe(
 								if arc then 7 elseif rounded then 5 else 1
 							)
-							t.expect(panel.Parent.Position.X.Offset).toBe(if classic then 0 else 20)
+							t.expect(panel.Position.X.Offset).toBe(if classic then 0 else 20)
 							local outline = row:FindFirstChild("Outline")
 							t.expect(outline == nil).toBe(classic)
 							if outline then
