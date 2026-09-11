@@ -348,8 +348,12 @@ local function buildRoundedDemo()
 		Vector3.fromNormalId(fA.face),
 		Vector3.fromNormalId(fB.face)
 	)
-	fillerData =
-		{ segments = assert(ArcJoin.plan(start, finish, normalB, fA.size, Vector3.fromNormalId(fA.face), 6)) }
+	local template = Instance.new("Part")
+	template.Size = fA.size
+	fillerData = {
+		segments = ArcJoin.plan(template, start, finish, normalB, Vector3.fromNormalId(fA.face), 6),
+	}
+	template:Destroy()
 	return {
 		cameraCFrame = ANG_CAM,
 		partAStart = { CFrame = fA.cf, Size = fA.size },
@@ -366,18 +370,21 @@ local function buildArcDemo()
 	local finish = Vector3.new(0.8, 0.6, 0)
 	local direction = Vector3.new(1, 1, 0).Unit
 	local rotation = CFrame.Angles(0, 0, math.pi / 4)
-	return {
+
+	local template = Instance.new("Part")
+	template.Size = Vector3.new(1, 1, 0.8)
+	local demo = {
 		cameraCFrame = ANG_CAM,
 		partAStart = { CFrame = CFrame.new(-2.25, start.Y, 0), Size = Vector3.new(1.5, 1, 0.8) },
 		partAEnd = { CFrame = CFrame.new(-1.85, start.Y, 0), Size = Vector3.new(2.3, 1, 0.8) },
 		partBStart = { CFrame = CFrame.new(finish + direction * 1.65) * rotation, Size = Vector3.new(1.9, 1, 0.8) },
 		partBEnd = { CFrame = CFrame.new(finish + direction * 1.3) * rotation, Size = Vector3.new(2.6, 1, 0.8) },
 		filler = {
-			segments = assert(
-				ArcJoin.plan(CFrame.new(start), finish, -direction, Vector3.new(1, 1, 0.8), Vector3.xAxis, 24)
-			),
+			segments = ArcJoin.plan(template, CFrame.new(start), finish, -direction, Vector3.xAxis, 24),
 		},
 	}
+	template:Destroy()
+	return demo
 end
 
 export type PreviewMode = ResizeMode | "RoundedJoinCylinder"
