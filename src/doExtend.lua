@@ -5,6 +5,7 @@ local DraggerService = game:GetService("DraggerService")
 local Src = script.Parent
 local Packages = Src.Parent.Packages
 
+local areInstancesSame = require("./areInstancesSame")
 local DraggerFramework = require(Packages.DraggerFramework)
 local JointMaker = require(DraggerFramework.Utility.JointMaker)
 
@@ -260,7 +261,16 @@ local function resizePart(face: Face, delta: number)
 	end
 end
 
-local function fillJoint(faceA: Face, faceB: Face, fillPoint: Vector3, fillAxis: Vector3, pointsA: {Vector3}, pointsB: {Vector3}, offsetA: Vector3, offsetB: Vector3)
+local function fillJoint(
+	faceA: Face,
+	faceB: Face,
+	fillPoint: Vector3,
+	fillAxis: Vector3,
+	pointsA: { Vector3 },
+	pointsB: { Vector3 },
+	offsetA: Vector3,
+	offsetB: Vector3
+)
 	local maxProj = -math.huge
 	local minProj = math.huge
 	local maxRadius = -math.huge
@@ -336,76 +346,63 @@ local function fillAcuteGap(face: Face, dirSelf: Vector3, dirOther: Vector3, cro
 	wedge.Parent = face.Object.Parent
 end
 
-local function getArcExtension(template: BasePart, face: Face, segment: ArcJoin.Segment): number?
+-- Slopes use the same rectangular/triangular extrusion profiles as resizePart.
+-- Their selected normal is not one of the original part's cardinal axes.
+local function getArcFace(face: Face): (CFrame, Vector3, Vector3, ("Part" | "WedgePart")?)
 	local part = face.Object
+	local cf = part.CFrame
+	local size = part.Size
+	local point, normal = getBasis(face)
+
+	if face.CornerWedgeSide then
+		local up, height, width
+
+		if face.CornerWedgeSide == "Right" then
+			height = math.sqrt(size.X * size.X + size.Y * size.Y)
+			up = (cf.XVector * size.X + cf.YVector * size.Y) / height
+			width = size.Z
+		else
+			up, height = -cf.XVector, size.X
+			width = math.sqrt(size.Y * size.Y + size.Z * size.Z)
+		end
+
+		local depth = cf:VectorToObjectSpace(normal):Abs():Dot(size)
+		return CFrame.fromMatrix(point, normal, up), Vector3.new(depth, height, width), Vector3.xAxis, "WedgePart"
+	elseif face.IsWedge then
+		local width = math.sqrt(size.Y * size.Y + size.Z * size.Z)
+		local depth = cf:VectorToObjectSpace(normal):Abs():Dot(size)
+		return CFrame.fromMatrix(point, cf.XVector, normal), Vector3.new(size.X, depth, width), Vector3.yAxis, "Part"
+	end
+	return CFrame.new(point) * cf.Rotation, size, Vector3.fromNormalId(face.Normal), nil
+end
+
+local ARC_EXTENSION_IGNORED_PROPERTIES = { "CFrame", "Position", "Orientation", "Rotation", "Size" }
+
+local function getArcExtension(template: BasePart, face: Face, candidate: BasePart): number?
+	local part = face.Object
+
+	if not areInstancesSame(template, part, ARC_EXTENSION_IGNORED_PROPERTIES) then
+		return nil
+	end
+
+	local dimension = getDimension(face)
+	local cross = Vector3.one - dimension
+	local relative = part.CFrame:ToObjectSpace(candidate.CFrame)
+
+	local projectedSize = relative.XVector:Abs() * candidate.Size.X
+		+ relative.YVector:Abs() * candidate.Size.Y
+		+ relative.ZVector:Abs() * candidate.Size.Z
+
+	--stylua: ignore
 	if
-		not template:IsA("Part")
-		or template.Shape ~= Enum.PartType.Block
-		or not part:IsA("Part")
-		or part.Shape ~= Enum.PartType.Block
-		or #template:GetChildren() > 0
-		or #part:GetChildren() > 0
+		((projectedSize - part.Size) * cross).Magnitude > 0.0001
+		or (relative.Position * cross).Magnitude > 0.0001
 	then
 		return nil
 	end
-	if template ~= part then
-		if
-			template.Color ~= part.Color
-			or template.Material ~= part.Material
-			or template.MaterialVariant ~= part.MaterialVariant
-			or template.Transparency ~= part.Transparency
-			or template.Reflectance ~= part.Reflectance
-			or template.CastShadow ~= part.CastShadow
-			or template.Anchored ~= part.Anchored
-			or template.Massless ~= part.Massless
-			or template.RootPriority ~= part.RootPriority
-			or template.CustomPhysicalProperties ~= part.CustomPhysicalProperties
-			or template.CanCollide ~= part.CanCollide
-			or template.CanTouch ~= part.CanTouch
-			or template.CanQuery ~= part.CanQuery
-			or template.CollisionGroup ~= part.CollisionGroup
-			or template.TopSurface ~= part.TopSurface
-			or template.BottomSurface ~= part.BottomSurface
-			or template.LeftSurface ~= part.LeftSurface
-			or template.RightSurface ~= part.RightSurface
-			or template.FrontSurface ~= part.FrontSurface
-			or template.BackSurface ~= part.BackSurface
-		then
-			return nil
-		end
-		local a, b = template:GetAttributes(), part:GetAttributes()
-		for key, value in a do
-			if b[key] ~= value then
-				return nil
-			end
-		end
-		for key, value in b do
-			if a[key] ~= value then
-				return nil
-			end
-		end
-		local tagsA, tagsB = template:GetTags(), part:GetTags()
-		if #tagsA ~= #tagsB then
-			return nil
-		end
-		for _, tag in tagsA do
-			if not part:HasTag(tag) then
-				return nil
-			end
-		end
-	end
-	local dimension = getDimension(face)
-	local cross = Vector3.one - dimension
-	local relative = part.CFrame:ToObjectSpace(segment.CFrame)
 
-	local projectedSize = relative.XVector:Abs() * segment.Size.X
-		+ relative.YVector:Abs() * segment.Size.Y
-		+ relative.ZVector:Abs() * segment.Size.Z
-	if ((projectedSize - part.Size) * cross).Magnitude > 0.0001 or (relative.Position * cross).Magnitude > 0.0001 then
-		return nil
-	end
 	local point, normal = getBasis(face)
-	local extension = (segment.CFrame.Position - point):Dot(normal) + projectedSize:Dot(dimension) / 2
+	local extension = (candidate.CFrame.Position - point):Dot(normal) + projectedSize:Dot(dimension) / 2
 	local length = part.Size:Dot(dimension) + extension
 	return if length >= 0.001 and length <= 2048 then extension else nil
 end
@@ -418,85 +415,103 @@ local function createArcJoin(
 	segmentCount: number?,
 	allowShrink: boolean?
 )
-	if faceA.Object == faceB.Object then
-		return
+	if (not allowShrink) and (paddingA < 0 or paddingB < 0) then
+		error("Arc Join: padding must be a non-negative number.")
 	end
-	if isExtrusionFace(faceA) or isExtrusionFace(faceB) then
-		error("Arc Join: select an end face, rather than a sloped wedge face.")
-	end
-	if
-		not math.isfinite(paddingA)
-		or not math.isfinite(paddingB)
-		or (not allowShrink and (paddingA < 0 or paddingB < 0))
-	then
-		error("Arc Join: padding must be a finite, non-negative number.")
-	end
-	local pointA, normalA = getBasis(faceA)
-	local pointB, normalB = getBasis(faceB)
+
+	local frameA, profileA, localNormalA, extrusionClass = getArcFace(faceA)
+	local frameB, profileB, localNormalB = getArcFace(faceB)
+	local pointA = frameA.Position
+	local pointB = frameB.Position
+	local normalA = frameA:VectorToWorldSpace(localNormalA)
+	local normalB = frameB:VectorToWorldSpace(localNormalB)
 	local startPoint = pointA + normalA * paddingA
-	local startFrame = CFrame.new(startPoint) * faceA.Object.CFrame.Rotation
-	local endPoint, surfaceOffset = ArcJoin.getTargetPoint(
+	local startFrame = CFrame.new(startPoint) * frameA.Rotation
+	local endPoint, surfaceOffset, targetRotation = ArcJoin.getTargetPoint(
 		startFrame,
-		CFrame.new(pointB + normalB * paddingB) * faceB.Object.CFrame.Rotation,
-		faceA.Object.Size,
-		faceB.Object.Size,
-		Vector3.fromNormalId(faceA.Normal),
-		Vector3.fromNormalId(faceB.Normal)
+		CFrame.new(pointB + normalB * paddingB) * frameB.Rotation,
+		profileA,
+		profileB,
+		localNormalA,
+		localNormalB
 	)
-	if not allowShrink and (endPoint - startPoint):Dot(pointB - pointA) <= 0 then
+
+	if not allowShrink and vector.dot(endPoint - startPoint, pointB - pointA) <= 0 then
 		error("Arc Join: padding leaves no room for the arc.")
 	end
+
 	local sizeA = faceA.Object.Size + getDimension(faceA) * paddingA
 	local sizeB = faceB.Object.Size + getDimension(faceB) * paddingB
+
 	if math.max(sizeA.X, sizeA.Y, sizeA.Z, sizeB.X, sizeB.Y, sizeB.Z) > 2048 then
 		error("Arc Join: padding exceeds the maximum part size.")
 	end
-	local segments = ArcJoin.plan(
+
+	local temporaryTemplate: BasePart?
+	local template = faceA.Object
+
+	if extrusionClass then
+		local extrusion = if extrusionClass == "WedgePart" then Instance.new("WedgePart") else Instance.new("Part")
+		copyPartProps(template, extrusion)
+		extrusion.Name = template.Name
+		extrusion.Size = profileA
+		template = extrusion
+		temporaryTemplate = extrusion
+	end
+
+	local parts = ArcJoin.plan(
+		template,
 		startFrame,
 		endPoint,
 		normalB,
-		faceA.Object.Size,
-		Vector3.fromNormalId(faceA.Normal),
+		localNormalA,
 		segmentCount,
-		if allowShrink then nil else surfaceOffset
+		if allowShrink then nil else surfaceOffset,
+		targetRotation
 	)
-	if not segments then
+
+	if temporaryTemplate then
+		temporaryTemplate:Destroy()
+	end
+
+	if not parts then
 		error("Arc Join: the segment count or resulting segment sizes cannot form a join.")
 	end
 
-	local first, last = 1, #segments
-	local extensionA = getArcExtension(faceA.Object, faceA, segments[first])
+	local first = 1
+	local last = #parts
+	local extensionA = getArcExtension(faceA.Object, faceA, parts[first])
+
 	if extensionA then
 		paddingA = extensionA
+		parts[first]:Destroy()
 		first += 1
 	end
+
 	if first <= last then
-		local extensionB = getArcExtension(faceA.Object, faceB, segments[last])
+		local extensionB = getArcExtension(faceA.Object, faceB, parts[last])
+
 		if extensionB then
 			paddingB = extensionB
+			parts[last]:Destroy()
 			last -= 1
 		end
 	end
-	-- Clone before padding changes the template, then parent the staged clones
-	-- together with the source resizes in one undo recording.
-	local clones: { BasePart } = {}
-	for i = first, last do
-		local segment = segments[i]
-		local clone = faceA.Object:Clone()
-		clone.Size = segment.Size
-		clone.CFrame = segment.CFrame
-		table.insert(clones, clone)
-	end
+
 	local recording = ChangeHistoryService:TryBeginRecording("ResizeAlign")
+
 	if paddingA ~= 0 then
 		resizePart(faceA, paddingA)
 	end
+
 	if paddingB ~= 0 then
 		resizePart(faceB, paddingB)
 	end
-	for _, clone in clones do
-		clone.Parent = faceA.Object.Parent
+
+	for i = first, last do
+		parts[i].Parent = faceA.Object.Parent
 	end
+
 	if recording then
 		ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
 	end
