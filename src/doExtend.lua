@@ -525,17 +525,6 @@ local function doExtend(
 	splineOptions: Settings.SplineJoinOptions?,
 	useCylinderForRoundedJoin: boolean?
 )
-	if resizeMode == "SplineJoin" then
-		local options = splineOptions or Settings.DefaultSplineJoinOptions
-		createSplineJoin(
-			faceA,
-			faceB,
-			if options.AdvancedPadding then options.PaddingA else options.Padding,
-			if options.AdvancedPadding then options.PaddingB else options.Padding,
-			if options.AutomaticSegments then nil else options.Segments
-		)
-		return
-	end
 	local pointsA = getFacePoints(faceA)
 	local pointsB = getFacePoints(faceB)
 	local localDimensionA = getDimension(faceA)
@@ -584,6 +573,18 @@ local function doExtend(
 
 	if sinAngle < kParallelSinAngle then
 		doParallelResize()
+		return
+	end
+
+	if resizeMode == "SplineJoin" then
+		local options = splineOptions or Settings.DefaultSplineJoinOptions
+		createSplineJoin(
+			faceA,
+			faceB,
+			if options.AdvancedPadding then options.PaddingA else options.Padding,
+			if options.AdvancedPadding then options.PaddingB else options.Padding,
+			if options.AutomaticSegments then nil else options.Segments
+		)
 		return
 	end
 

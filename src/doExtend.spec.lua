@@ -647,6 +647,22 @@ return function(t: TestContext)
 		cleanup(partA, partB)
 	end)
 
+	t.test("SplineJoin: parallel faces degrade to OuterTouch (no filler)", function()
+		local partA = makePart(CFrame.new(-3, 0, 0), Vector3.new(2, 2, 2))
+		local partB = makePart(CFrame.new(3, 0, 0), Vector3.new(2, 2, 2))
+		local faceA = makeFace(partA, Enum.NormalId.Right)
+		local faceB = makeFace(partB, Enum.NormalId.Left)
+
+		local childCountBefore = #workspace:GetChildren()
+
+		doExtend(faceA, faceB, "SplineJoin")
+
+		local childCountAfter = #workspace:GetChildren()
+		t.expect(childCountAfter).toBe(childCountBefore)
+		t.expect(partA.Size.X > 2).toBe(true)
+		cleanup(partA, partB)
+	end)
+
 	--------------------------------------------------------------------------------
 	-- Edge cases
 	--------------------------------------------------------------------------------
