@@ -571,12 +571,27 @@ local function doExtend(
 		end
 	end
 
-	if sinAngle < kParallelSinAngle then
+	if resizeMode ~= "SplineJoin" and sinAngle < kParallelSinAngle then
 		doParallelResize()
 		return
 	end
 
 	if resizeMode == "SplineJoin" then
+		local pointA = getBasis(faceA)
+		local pointB = getBasis(faceB)
+		local chord = pointB - pointA
+		local chordLength = chord.Magnitude
+		-- Parallel faces with a sideways offset still need a spline (TOPRAIL→C).
+		-- Collinear facing faces are a straight Outer Touch, not a spline.
+		if
+			chordLength > 0.001
+			and dirA:Dot(chord) >= 0.999 * chordLength
+			and (-dirB):Dot(chord) >= 0.999 * chordLength
+		then
+			doParallelResize()
+			return
+		end
+
 		local options = splineOptions or Settings.DefaultSplineJoinOptions
 		createSplineJoin(
 			faceA,

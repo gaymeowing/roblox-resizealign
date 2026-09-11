@@ -647,7 +647,7 @@ return function(t: TestContext)
 		cleanup(partA, partB)
 	end)
 
-	t.test("SplineJoin: parallel faces degrade to OuterTouch (no filler)", function()
+	t.test("SplineJoin: collinear faces use OuterTouch", function()
 		local partA = makePart(CFrame.new(-3, 0, 0), Vector3.new(2, 2, 2))
 		local partB = makePart(CFrame.new(3, 0, 0), Vector3.new(2, 2, 2))
 		local faceA = makeFace(partA, Enum.NormalId.Right)
@@ -657,9 +657,23 @@ return function(t: TestContext)
 
 		doExtend(faceA, faceB, "SplineJoin")
 
-		local childCountAfter = #workspace:GetChildren()
-		t.expect(childCountAfter).toBe(childCountBefore)
+		t.expect(#workspace:GetChildren()).toBe(childCountBefore)
 		t.expect(partA.Size.X > 2).toBe(true)
+		t.expect(partB.Size).toBe(Vector3.new(2, 2, 2))
+		cleanup(partA, partB)
+	end)
+
+	t.test("SplineJoin: parallel faces with a lateral offset still generate a spline", function()
+		local partA = makePart(CFrame.new(-3, 0, 0), Vector3.new(2, 2, 2))
+		local partB = makePart(CFrame.new(3, 5, 0), Vector3.new(2, 2, 2))
+		local faceA = makeFace(partA, Enum.NormalId.Right)
+		local faceB = makeFace(partB, Enum.NormalId.Left)
+
+		local childCountBefore = #workspace:GetChildren()
+
+		doExtend(faceA, faceB, "SplineJoin")
+
+		t.expect(#workspace:GetChildren() > childCountBefore).toBe(true)
 		cleanup(partA, partB)
 	end)
 
