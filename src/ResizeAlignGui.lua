@@ -247,7 +247,7 @@ local function SplineJoinOptions(props: {
 	return React.createElement(React.Fragment, nil, {
 		AutomaticSegments = e(OptionEntry, {
 			LayoutOrder = 1,
-			HelpText = "Choose the number of clones automatically from the spline length and curvature. Turn this off to enter a segment count.",
+			HelpText = "Choose the number of clones automatically from the spline length and curvature. Turn this off to manually enter a segment count.",
 			Content = e(Checkbox, {
 				Label = "Automatic segments",
 				Checked = options.AutomaticSegments,
@@ -427,7 +427,7 @@ local function ResizeMethodPanel(props: {
 		RoundedJoin = makeExpandableButton(
 			"Rounded Join",
 			"RoundedJoin",
-			"Connect the selected faces with an automatic arc using fixed padding, or use the original cylinder filler.",
+			"Both parts meet at the middle and any exposed gap is filled with a sphere or cylinder, or with a Spline Join. Works best on faces which are the same size.",
 			5,
 			e(RoundedJoinOptions, {
 				Settings = props.Settings,
@@ -437,7 +437,7 @@ local function ResizeMethodPanel(props: {
 		SplineJoin = makeExpandableButton(
 			"Spline Join",
 			"SplineJoin",
-			"Connect the selected faces with a spline of clones of the first part. Segments are automatic by default. Padding extends each selected end before the spline begins.",
+			"Connect the selected faces with clones of the first part along a spline that matches both face orientations.",
 			7,
 			e(SplineJoinOptions, {
 				Options = props.Settings.SplineJoin,
@@ -722,7 +722,7 @@ local function ClassicResizeMethodPanel(props: {
 		RoundedJoin = makeExpandableButton(
 			"RoundedJoin",
 			"Rounded Join",
-			"rounded arc or cylinder filler",
+			"fill with a curved join",
 			4,
 			e(RoundedJoinOptions, {
 				Settings = props.Settings,
@@ -732,7 +732,7 @@ local function ClassicResizeMethodPanel(props: {
 		SplineJoin = makeExpandableButton(
 			"SplineJoin",
 			"Spline Join",
-			"connect with a spline of clones",
+			"connect with a spline of parts",
 			5,
 			e(SplineJoinOptions, {
 				Options = props.Settings.SplineJoin,
