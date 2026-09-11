@@ -201,9 +201,10 @@ local function ArcJoinOptions(props: {
 	UpdatedSettings: () -> (),
 })
 	local options = props.Options
-	local function paddingInput(key: PaddingKey)
+	local function paddingInput(key: PaddingKey, color: Color3?)
 		return e(NumberInput, {
 			Value = options[key],
+			ChipColor = color,
 			LayoutOrder = 1,
 			EmptyAsZero = true,
 			Unit = " studs",
@@ -217,7 +218,7 @@ local function ArcJoinOptions(props: {
 		})
 	end
 
-	local function paddingField(label: string, key: PaddingKey, order: number)
+	local function paddingField(label: string, key: PaddingKey, order: number, color: Color3?)
 		return e("Frame", {
 			Size = UDim2.new(
 				if options.AdvancedPadding then 0.5 else 1,
@@ -239,7 +240,7 @@ local function ArcJoinOptions(props: {
 				TextSize = 16,
 				LayoutOrder = 0,
 			}),
-			Input = paddingInput(key),
+			Input = paddingInput(key, color),
 		})
 	end
 
@@ -298,8 +299,8 @@ local function ArcJoinOptions(props: {
 					Padding = UDim.new(0, 6),
 				}),
 				Both = not options.AdvancedPadding and paddingField("Both ends", "Padding", 1),
-				First = options.AdvancedPadding and paddingField("First part", "PaddingA", 1),
-				Second = options.AdvancedPadding and paddingField("Second part", "PaddingB", 2),
+				First = options.AdvancedPadding and paddingField("First part", "PaddingA", 1, Color3.new(1,0,0)),
+				Second = options.AdvancedPadding and paddingField("Second part", "PaddingB", 2, Color3.new(0,0,1)),
 			}),
 		}),
 	})
