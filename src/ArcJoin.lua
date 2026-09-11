@@ -2,108 +2,182 @@
 
 local ShapeUtils = require("./ShapeUtils")
 
-export type Segment = { CFrame: CFrame, Size: Vector3 }
+local X_AXIS = vector.create(1, 0, 0)
+local Y_AXIS = vector.create(0, 1, 0)
+local Z_AXIS = vector.create(0, 0, 1)
 
--- World-space offsets from each endpoint to its cubic Bezier control point.
--- Scale an offset to adjust its handle length; rotate it to adjust its direction.
-export type Tangents = { Start: Vector3, Finish: Vector3 }
+local REFINED_PARAMETERS: { number } = {}
+local TRANSPORTED_FRAMES: { CFrame } = {}
+local START_REACHES: { number } = {}
+local END_REACHES: { number } = {}
+local DIRECTIONS: { vector } = {}
+local PARAMETERS: { number } = {}
+local MEASURES: { number } = {}
+local POINTS: { vector } = {}
 
-local function rotateAlong(
-	rotation: CFrame,
-	from: Vector3,
-	to: Vector3,
-	localNormal: Vector3,
-	bendAxis: Vector3?
-): CFrame
-	local axis = from:Cross(to)
-	local dot = math.clamp(from:Dot(to), -1, 1)
-	if axis.Magnitude > 1e-6 then
-		return CFrame.fromAxisAngle(axis.Unit, math.atan2(axis.Magnitude, dot)) * rotation
+-- type solver doesn't know that Vector3 and vector are the same
+local function CAST_VECTOR(vec: Vector3): vector
+	return vec :: any
+end
+
+local function CAST_VECTOR3(vec: vector): Vector3
+	return vec :: any
+end
+
+local function CFrame_VectorToWorldSpace(cframe: CFrame, vec: vector): vector
+	return CAST_VECTOR(cframe:VectorToWorldSpace(CAST_VECTOR3(vec)))
+end
+
+local function CFrame_VectorToObjectSpace(cframe: CFrame, vec: vector): vector
+	return CAST_VECTOR(cframe:VectorToObjectSpace(CAST_VECTOR3(vec)))
+end
+
+local function CFrame_fromAxisAngle(vec: vector, r: number): CFrame
+	return CFrame.fromAxisAngle(CAST_VECTOR3(vec), r)
+end
+
+local function CFrame_fromVector(vec: vector): CFrame
+	return CFrame.new(CAST_VECTOR3(vec))
+end
+
+local function CFrame_fromMatrix(position: vector, x: vector, y: vector, z: vector): CFrame
+	return CFrame.fromMatrix(CAST_VECTOR3(position), CAST_VECTOR3(x), CAST_VECTOR3(y), CAST_VECTOR3(z))
+end
+
+-- context for name being the way it is:
+-- https://create.roblox.com/docs/reference/engine/datatypes/CFrame#CFrame-+-Vector3
+local function translateCFrameToVectorWorldSpace(cframe: CFrame, vec: vector): CFrame
+	return cframe + CAST_VECTOR3(vec)
+end
+
+local function crossSectionRadius(rotation: CFrame, halfSize: vector, direction: vector): number
+	local crossSectionVector = vector.abs(CFrame_VectorToObjectSpace(rotation, direction)) * halfSize
+	return crossSectionVector.x + crossSectionVector.y + crossSectionVector.z
+end
+
+local function rotateAlong(rotation: CFrame, from: vector, to: vector, localNormal: vector, bendAxis: vector?): CFrame
+	local dot = math.clamp(vector.dot(from, to), -1, 1)
+	local axis = vector.cross(from, to)
+	local axis_magnitude = vector.magnitude(axis)
+
+	if axis_magnitude > 1e-6 then
+		return CFrame_fromAxisAngle(vector.normalize(axis), math.atan2(axis_magnitude, dot)) * rotation
 	elseif dot < 0 then
 		-- At a half-turn, use the curve's plane instead of choosing an unrelated
 		-- local axis and flipping the cross-section at the final segment.
-		if bendAxis and bendAxis.Magnitude > 1e-6 then
-			return CFrame.fromAxisAngle(bendAxis.Unit, math.pi) * rotation
+		if bendAxis and vector.magnitude(bendAxis) > 1e-6 then
+			return CFrame_fromAxisAngle(vector.normalize(bendAxis), math.pi) * rotation
 		end
-		local perpendicular = if math.abs(localNormal.Y) < 0.5 then Vector3.yAxis else Vector3.xAxis
-		return CFrame.fromAxisAngle(rotation:VectorToWorldSpace(perpendicular), math.pi) * rotation
+
+		local perpendicular = if math.abs(localNormal.y) < 0.5 then Y_AXIS else X_AXIS
+		return CFrame_fromAxisAngle(CFrame_VectorToWorldSpace(rotation, perpendicular), math.pi) * rotation
 	end
 	return rotation
 end
 
-local function crossSectionRadius(rotation: CFrame, halfSize: Vector3, direction: Vector3): number
-	local localDirection = rotation:VectorToObjectSpace(direction)
-	return math.abs(localDirection.X) * halfSize.X
-		+ math.abs(localDirection.Y) * halfSize.Y
-		+ math.abs(localDirection.Z) * halfSize.Z
-end
+local ArcJoin = {}
 
 -- Align the top/bottom edges chosen by the shorter part. The offset remains
 -- signed when the template is taller, so its outside surface stays flush.
-local function getTargetPoint(
+-- Pass the returned rotation to plan/getTangents to retain the target face roll.
+function ArcJoin.getTargetPoint(
 	startFrame: CFrame,
 	targetFrame: CFrame,
-	size: Vector3,
-	targetSize: Vector3,
-	localNormal: Vector3,
-	targetLocalNormal: Vector3
-): (Vector3, Vector3)
-	local up = if math.abs(targetLocalNormal.Y) < 0.5 then Vector3.yAxis else Vector3.zAxis
-	local targetUp = targetFrame:VectorToWorldSpace(up)
-	local endNormal = targetFrame:VectorToWorldSpace(targetLocalNormal)
-	local startNormal = startFrame:VectorToWorldSpace(localNormal)
-	local separation = targetFrame.Position - startFrame.Position
+	size: vector,
+	targetSize: vector,
+	localNormal: vector,
+	targetLocalNormal: vector
+): (vector, vector, CFrame)
+	local up = if math.abs(targetLocalNormal.y) < 0.5 then Y_AXIS else Z_AXIS
+	local targetUp = CFrame_VectorToWorldSpace(targetFrame, up)
+	local endNormal = CFrame_VectorToWorldSpace(targetFrame, targetLocalNormal)
+	local startNormal = CFrame_VectorToWorldSpace(startFrame, localNormal)
+	local targetPosition = CAST_VECTOR(targetFrame.Position)
+	local separation = targetPosition - CAST_VECTOR(startFrame.Position)
+
 	local rotation =
-		rotateAlong(startFrame.Rotation, startNormal, -endNormal, localNormal, startNormal:Cross(separation))
-	local dimension = Vector3.new(math.abs(localNormal.X), math.abs(localNormal.Y), math.abs(localNormal.Z))
-	local radius = crossSectionRadius(rotation, size * (Vector3.one - dimension) / 2, targetUp)
-	local targetRadius = targetSize:Dot(up) / 2
-	local offset = targetRadius - radius
-	local startUp = if math.abs(localNormal.Y) < 0.5 then Vector3.yAxis else Vector3.zAxis
-	local commonUp = startFrame:VectorToWorldSpace(startUp) + targetUp
-	if commonUp.Magnitude < 0.001 then
-		commonUp = targetUp
+		rotateAlong(startFrame.Rotation, startNormal, -endNormal, localNormal, vector.cross(startNormal, separation))
+	-- A direction fixes the end face's normal, but not its roll. Keep the
+	-- template's up axis parallel to the target face's up axis as well.
+	local startUp = if math.abs(localNormal.y) < 0.5 then Y_AXIS else Z_AXIS
+	do
+		local rotatedUp = CFrame_VectorToWorldSpace(rotation, startUp)
+		local sideAxis = vector.abs(vector.cross(targetLocalNormal, up))
+		local targetSide = CFrame_VectorToWorldSpace(targetFrame, sideAxis)
+		if math.abs(vector.dot(rotatedUp, targetSide)) > math.abs(vector.dot(rotatedUp, targetUp)) then
+			up = sideAxis
+			targetUp = targetSide
+		end
+		local alignedUp = if vector.dot(rotatedUp, targetUp) < 0 then -targetUp else targetUp
+		--stylua: ignore
+		local roll = math.atan2(
+				vector.dot(-endNormal, vector.cross(rotatedUp, alignedUp)),
+				vector.dot(rotatedUp, alignedUp)
+			)
+		rotation = CFrame_fromAxisAngle(-endNormal, roll) * rotation
 	end
-	local relativeHeight = separation:Dot(commonUp) * (if radius > targetRadius then 1 else -1)
+	local dimension = vector.abs(localNormal)
+	local radius = crossSectionRadius(rotation, size * (vector.one - dimension) / 2, targetUp)
+	local targetRadius = vector.dot(targetSize, up) / 2
+	local offset = targetRadius - radius
+	-- Measure height in the shorter part's frame. Averaging both up axes
+	-- lets horizontal separation change which edge is considered nearer.
+	local heightAxis = if radius > targetRadius then targetUp else CFrame_VectorToWorldSpace(startFrame, startUp)
+	local relativeHeight = vector.dot(separation, heightAxis) * (if radius > targetRadius then 1 else -1)
 	local side = if relativeHeight >= 0 then 1 else -1
-	return targetFrame.Position + targetUp * (side * offset), (rotation:VectorToObjectSpace(targetUp * (side * radius)))
+
+	return targetPosition + targetUp * (side * offset),
+		CFrame_VectorToObjectSpace(rotation, targetUp * (side * radius)),
+		rotation
 end
 
-local function pointAt(startPoint: Vector3, controlA: Vector3, controlB: Vector3, endPoint: Vector3, t: number): Vector3
+local function pointAt(
+	startPoint: vector,
+	controlA: vector,
+	controlB: vector,
+	endPoint: vector,
+	t: number,
+	lateral: vector
+): vector
 	local s = 1 - t
-	return startPoint * (s * s * s) + controlA * (3 * s * s * t) + controlB * (3 * s * t * t) + endPoint * (t * t * t)
+	local squared = s * s
+	local vec = startPoint * (squared * s) + controlA * (3 * squared * t)
+
+	-- luau doesnt free up no-longer used variable slots so we're manually overwriting it
+	squared = t * t
+	return vec
+		+ controlB * (3 * s * squared)
+		+ endPoint * (squared * t)
+		+ lateral * (squared * (t * (10 + t * (-15 + 6 * t)) - (3 - 2 * t)))
 end
 
 local function tangentAt(
-	startPoint: Vector3,
-	controlA: Vector3,
-	controlB: Vector3,
-	endPoint: Vector3,
-	t: number
-): Vector3
+	startPoint: vector,
+	controlA: vector,
+	controlB: vector,
+	endPoint: vector,
+	t: number,
+	lateral: vector
+): vector
 	local s = 1 - t
-	return ((controlA - startPoint) * (s * s) + (controlB - controlA) * (2 * s * t) + (endPoint - controlB) * (t * t)).Unit
+	return vector.normalize(
+		(controlA - startPoint) * (s * s)
+			+ (controlB - controlA) * (2 * s * t)
+			+ (endPoint - controlB) * (t * t)
+			+ lateral * (10 * t * t * s * s - 2 * t * s)
+	)
 end
 
-local function tangentPoint(origin: Vector3, normal: Vector3, a: Vector3, b: Vector3): Vector3
-	local direction = (b - a).Unit
-	local cross = normal:Cross(direction)
-	local denominator = cross:Dot(cross)
-	local aReach, bReach = (a - origin):Dot(normal), (b - origin):Dot(normal)
-	local reach = if denominator > 1e-10
-		then (a - origin):Cross(direction):Dot(cross) / denominator
-		else if math.abs(aReach) < math.abs(bReach) then aReach else bReach
-	return origin + normal * reach
-end
-
-local function intersectTangents(a: Vector3, directionA: Vector3, b: Vector3, directionB: Vector3): Vector3
+local function intersectTangents(a: vector, directionA: vector, b: vector, directionB: vector): vector
 	local separation = b - a
-	local normal = directionA:Cross(directionB)
-	local denominator = normal:Dot(normal)
+	local normal = vector.cross(directionA, directionB)
+	local denominator = vector.dot(normal, normal)
+
 	if denominator > 1e-10 then
-		local reachA = separation:Cross(directionB):Dot(normal) / denominator
-		local reachB = directionA:Cross(separation):Dot(normal) / denominator
-		local limit = separation.Magnitude * 2
+		local reachA = vector.dot(vector.cross(separation, directionB), normal) / denominator
+		local reachB = vector.dot(vector.cross(directionA, separation), normal) / denominator
+		local limit = vector.magnitude(separation) * 2
+
 		if reachA >= 0 and reachB >= 0 and reachA <= limit and reachB <= limit then
 			return a + directionA * reachA
 		end
@@ -113,33 +187,34 @@ local function intersectTangents(a: Vector3, directionA: Vector3, b: Vector3, di
 	return (a + b) / 2
 end
 
-local function distanceToSegmentSquared(point: Vector3, a: Vector3, b: Vector3): number
+local function distanceToSegmentSquared(point: vector, a: vector, b: vector): number
 	local chord = b - a
-	local lengthSquared = chord:Dot(chord)
-	local t = if lengthSquared > 0 then math.clamp((point - a):Dot(chord) / lengthSquared, 0, 1) else 0
+	local lengthSquared = vector.dot(chord, chord)
+	local t = if lengthSquared > 0 then math.clamp(vector.dot(point - a, chord) / lengthSquared, 0, 1) else 0
 	local difference = point - (a + chord * t)
-	return difference:Dot(difference)
+	return vector.dot(difference, difference)
 end
 
 local function surfaceIntervalError(
 	left: number,
 	right: number,
-	startPoint: Vector3,
-	controlA: Vector3,
-	controlB: Vector3,
-	endPoint: Vector3
+	startPoint: vector,
+	controlA: vector,
+	controlB: vector,
+	endPoint: vector,
+	lateral: vector
 ): number
-	local a = pointAt(startPoint, controlA, controlB, endPoint, left)
-	local b = pointAt(startPoint, controlA, controlB, endPoint, right)
+	local a = pointAt(startPoint, controlA, controlB, endPoint, left, lateral)
+	local b = pointAt(startPoint, controlA, controlB, endPoint, right, lateral)
 	local joint = intersectTangents(
 		a,
-		tangentAt(startPoint, controlA, controlB, endPoint, left),
+		tangentAt(startPoint, controlA, controlB, endPoint, left, lateral),
 		b,
-		tangentAt(startPoint, controlA, controlB, endPoint, right)
+		tangentAt(startPoint, controlA, controlB, endPoint, right, lateral)
 	)
 	local errorSquared = 0
 	for quarter = 1, 3 do
-		local point = pointAt(startPoint, controlA, controlB, endPoint, left + (right - left) * quarter / 4)
+		local point = pointAt(startPoint, controlA, controlB, endPoint, left + (right - left) * quarter / 4, lateral)
 		errorSquared = math.max(
 			errorSquared,
 			math.min(distanceToSegmentSquared(point, a, joint), distanceToSegmentSquared(point, joint, b))
@@ -148,8 +223,8 @@ local function surfaceIntervalError(
 	return errorSquared
 end
 
-local function miterExtension(rotation: CFrame, halfSection: Vector3, direction: Vector3, plane: Vector3): number
-	local denominator = math.abs(direction:Dot(plane))
+local function miterExtension(rotation: CFrame, halfSection: vector, direction: vector, plane: vector): number
+	local denominator = math.abs(vector.dot(direction, plane))
 	if denominator < 1e-6 then
 		return math.huge
 	end
@@ -157,28 +232,30 @@ local function miterExtension(rotation: CFrame, halfSection: Vector3, direction:
 end
 
 local function arcHandles(
-	startPoint: Vector3,
-	endPoint: Vector3,
-	startNormal: Vector3,
-	endNormal: Vector3,
+	startPoint: vector,
+	endPoint: vector,
+	startNormal: vector,
+	endNormal: vector,
 	angle: number,
-	cross: Vector3,
+	cross: vector,
 	crossSquared: number
-): (number, number, Vector3?)
-	local distance = (endPoint - startPoint).Magnitude
+): (number, number, vector?)
+	local distance = vector.magnitude((endPoint - startPoint))
 	local handleLength = 2 * distance / (3 * (1 + math.cos(angle / 2)))
-	local handleA, handleB = handleLength, handleLength
-	local tangentCorner: Vector3? = nil
+	local handleA = handleLength
+	local handleB = handleLength
+	local tangentCorner: vector? = nil
 
 	if crossSquared > 1e-10 then
 		local separation = endPoint - startPoint
-		local reachA = separation:Cross(endNormal):Dot(cross) / crossSquared
-		local reachB = separation:Cross(startNormal):Dot(cross) / crossSquared
+		local reachA = vector.dot(vector.cross(separation, endNormal), cross) / crossSquared
+		local reachB = vector.dot(vector.cross(separation, startNormal), cross) / crossSquared
 		if reachA > 0 and reachB > 0 then
 			-- Unequal tangent reaches need unequal handles. Equal handles can
 			-- push the middle control points past one another and create an S.
 			local fraction = 4 / 3 * math.tan(angle / 4) / math.tan(angle / 2)
-			handleA, handleB = reachA * fraction, reachB * fraction
+			handleA = reachA * fraction
+			handleB = reachB * fraction
 			tangentCorner = (startPoint + startNormal * reachA + endPoint + endNormal * reachB) / 2
 		end
 	end
@@ -188,198 +265,286 @@ end
 
 local function getArcGuide(
 	startFrame: CFrame,
-	endPoint: Vector3,
-	endNormal: Vector3,
-	localNormal: Vector3,
-	surfaceOffset: Vector3?
-): (Vector3, Vector3, Vector3, Tangents, Vector3?)
-	local startPoint = startFrame.Position
-	local startNormal = startFrame:VectorToWorldSpace(localNormal)
-	local angle = math.acos(math.clamp(-startNormal:Dot(endNormal), -1, 1))
-	local cross = startNormal:Cross(endNormal)
-	local crossSquared = cross:Dot(cross)
-	local planar = crossSquared > 1e-10 and math.abs((endPoint - startPoint):Dot(cross.Unit)) < 0.0001
+	endPoint: vector,
+	endNormal: vector,
+	localNormal: vector,
+	surfaceOffset: vector?,
+	targetRotation: CFrame?
+): (vector, vector, vector, vector, vector, vector?)
+	local startPoint = CAST_VECTOR(startFrame.Position)
+	local startNormal = CFrame_VectorToWorldSpace(startFrame, localNormal)
+	local angle = math.acos(math.clamp(-vector.dot(startNormal, endNormal), -1, 1))
+	local cross = vector.cross(startNormal, endNormal)
+	local crossSquared = vector.dot(cross, cross)
+	local planar = crossSquared > 1e-10
+		and math.abs(vector.dot(endPoint - startPoint, vector.normalize(cross))) < 0.0001
 	local handleA, handleB, tangentCorner =
 		arcHandles(startPoint, endPoint, startNormal, endNormal, angle, cross, crossSquared)
-	local guideOffset = Vector3.zero
+	local guideOffset = vector.zero
+
 	if surfaceOffset and (not planar or tangentCorner == nil) then
 		-- Fitting a tight reverse bend through the centers makes its visible
 		-- edge curl more sharply as the template gets taller. Fit that edge
 		-- directly, then offset each clone back by its unchanged thickness.
 		guideOffset = surfaceOffset
-		startPoint += startFrame:VectorToWorldSpace(guideOffset)
-		local endRotation = rotateAlong(
-			startFrame.Rotation,
-			startNormal,
-			-endNormal,
-			localNormal,
-			startNormal:Cross(endPoint - startPoint)
-		)
-		endPoint += endRotation:VectorToWorldSpace(guideOffset)
+		startPoint += CFrame_VectorToWorldSpace(startFrame, guideOffset)
+		local endRotation = targetRotation
+			or rotateAlong(
+				startFrame.Rotation,
+				startNormal,
+				-endNormal,
+				localNormal,
+				vector.cross(startNormal, endPoint - startPoint)
+			)
+		endPoint += CFrame_VectorToWorldSpace(endRotation, guideOffset)
 		handleA, handleB, tangentCorner =
 			arcHandles(startPoint, endPoint, startNormal, endNormal, angle, cross, crossSquared)
 	end
 
-	return startPoint,
-		endPoint,
-		guideOffset,
-		{ Start = startNormal * handleA, Finish = endNormal * handleB },
-		tangentCorner
+	return startPoint, endPoint, guideOffset, startNormal * handleA, endNormal * handleB, tangentCorner
 end
 
--- Uses the same endpoint/visible-surface fit as plan. Returned offsets
--- can be retained and edited by a dragger, then passed back to the planner.
-local function getTangents(
+--[[
+	Uses the same endpoint/visible-surface fit as plan. Returned offsets
+	can be retained and edited by a dragger, then passed back to the planner.
+
+	returns `tangentStart, tangentFinish`
+]]
+function ArcJoin.getTangents(
 	startFrame: CFrame,
-	endPoint: Vector3,
-	endNormal: Vector3,
-	localNormal: Vector3,
-	surfaceOffset: Vector3?
-): Tangents
-	local _, _, _, tangents = getArcGuide(startFrame, endPoint, endNormal, localNormal, surfaceOffset)
-	return tangents
+	endPoint: vector,
+	endNormal: vector,
+	localNormal: vector,
+	surfaceOffset: vector?,
+	targetRotation: CFrame?
+): (vector, vector)
+	local _, _, _, start, finish =
+		getArcGuide(startFrame, endPoint, endNormal, localNormal, surfaceOffset, targetRotation)
+	return start, finish
 end
 
 -- startFrame retains the first part's axes at its selected face. Both normals
 -- point out of the selected parts; tangent offsets point toward the controls.
-local function plan(
+-- Every generated part is a clone of template.
+function ArcJoin.plan(
+	template: BasePart,
 	startFrame: CFrame,
-	endPoint: Vector3,
-	endNormal: Vector3,
-	size: Vector3,
-	localNormal: Vector3,
+	endPoint: vector,
+	endNormal: vector,
+	localNormal: vector,
 	requestedSegments: number?,
-	surfaceOffset: Vector3?,
-	requestedTangents: Tangents?
-): { Segment }?
-	if (endPoint - startFrame.Position).Magnitude < 0.001 then
+	surfaceOffset: vector?,
+	targetRotation: CFrame?,
+	requestedTangentStart: vector?,
+	requestedTangentFinish: vector?
+): { BasePart }?
+	if vector.magnitude((endPoint - CAST_VECTOR(startFrame.Position))) < 0.001 then
 		return nil
 	end
+
 	if requestedSegments ~= nil and (requestedSegments < 1 or requestedSegments % 1 ~= 0) then
 		return nil
 	end
 
-	local startPoint, finishPoint, guideOffset, automaticTangents, tangentCorner =
-		getArcGuide(startFrame, endPoint, endNormal, localNormal, surfaceOffset)
-	local tangents = requestedTangents or automaticTangents
-	local controlA, controlB = startPoint + tangents.Start, finishPoint + tangents.Finish
-	local startNormal = startFrame:VectorToWorldSpace(localNormal)
-	local cross = startNormal:Cross(endNormal)
-	if cross:Dot(cross) <= 1e-10 then
-		cross = (finishPoint - startPoint):Cross(startNormal)
-	end
-	local planar = cross:Dot(cross) > 1e-10
-		and math.abs((finishPoint - startPoint):Dot(cross.Unit)) < 0.0001
-		and math.abs(tangents.Start:Dot(cross.Unit)) < 0.0001
-		and math.abs(tangents.Finish:Dot(cross.Unit)) < 0.0001
+	local startPoint, finishPoint, guideOffset, tangentStart, tangentFinish, tangentCorner =
+		getArcGuide(startFrame, endPoint, endNormal, localNormal, surfaceOffset, targetRotation)
 
-	local dimension = localNormal:Abs()
-	local templateLength = size:Dot(dimension)
-	local halfSection = size * (Vector3.one - dimension) / 2
+	if requestedTangentStart and requestedTangentFinish then
+		tangentStart = requestedTangentStart
+		tangentFinish = requestedTangentFinish
+	end
+
+	local controlA = startPoint + tangentStart
+	local controlB = finishPoint + tangentFinish
+	local startRotation = startFrame.Rotation
+	local startNormal = CFrame_VectorToWorldSpace(startFrame, localNormal)
+	local separation = finishPoint - startPoint
+	local cross = vector.cross(startNormal, endNormal)
+	local crossSquared = vector.dot(cross, cross)
+
+	if crossSquared <= 1e-10 then
+		cross = vector.cross(separation, startNormal)
+		crossSquared = vector.dot(cross, cross)
+	end
+
+	local hasCurveAxis = crossSquared > 1e-10
+	local crossAxis = if hasCurveAxis then vector.normalize(cross) else vector.zero
+	local planar = hasCurveAxis
+		and math.abs(vector.dot(separation, crossAxis)) < 0.0001
+		and math.abs(vector.dot(tangentStart, crossAxis)) < 0.0001
+		and math.abs(vector.dot(tangentFinish, crossAxis)) < 0.0001
+
+	-- Ease lateral displacement with a quintic blend. The out-of-plane
+	-- acceleration vanishes at both faces, so a spatial join levels into them.
+	local lateral = if not planar and hasCurveAxis then crossAxis * vector.dot(separation, crossAxis) else vector.zero
+	local endRotation = targetRotation or rotateAlong(startRotation, startNormal, -endNormal, localNormal, -cross)
+	local sectionUp = if math.abs(localNormal.y) < 0.5 then Y_AXIS else Z_AXIS
+	local endRoll = 0
+
+	if planar then
+		-- A planar centerline does not imply matching cross-section roll.
+		-- Front/front faces can share a curve plane and still have tilted edges.
+		local transported = rotateAlong(startRotation, startNormal, -endNormal, localNormal, -cross)
+		local up = CFrame_VectorToWorldSpace(transported, sectionUp)
+		local targetUp = CFrame_VectorToWorldSpace(endRotation, sectionUp)
+		endRoll = math.atan2(vector.dot(-endNormal, vector.cross(up, targetUp)), vector.dot(up, targetUp))
+	end
+
+	local hasEndpointRoll = math.abs(endRoll) > 0.00001
+	local sectionSide = vector.cross(localNormal, sectionUp)
+	local startSide = CFrame_VectorToWorldSpace(startFrame, sectionSide)
+	local endSide = CFrame_VectorToWorldSpace(endRotation, sectionSide)
+	local sharedSide = vector.dot(startSide, endSide) > 0.9999
+	local isTwistedSpatial = not planar and not sharedSide
+	local sectionRotation = CFrame_fromMatrix(vector.zero, localNormal, sectionUp, sectionSide):Inverse()
+
+	local dimension = vector.abs(localNormal)
+	local size = CAST_VECTOR(template.Size)
+	local halfSection = size * (vector.one - dimension) / 2
+	local templateLength = vector.dot(size, dimension)
 	local count: number
-	local tangentSegments: boolean
-	local parameters = { 0 }
+	local scratchParameters = REFINED_PARAMETERS
+	local parameters = PARAMETERS
+	local useEndpointDirections: boolean
+	local usesTangentSegments: boolean
+	local parameterCount = 1
+
+	parameters[1] = 0
 
 	-- Distribute samples by length and curvature, then refine the visible edge.
 	do
 		local samples = math.max(128, (requestedSegments or 0) * 4)
-		local measures = table.create(samples)
 		local totalMeasure = 0
-		local totalLength, totalTurn = 0, 0
+		local totalLength = 0
+		local totalTurn = 0
 
-		measures[1] = 0
+		MEASURES[1] = 0
 
 		local previousPoint = startPoint
 		local previousDirection = startNormal
+		local previousUp = CFrame_VectorToWorldSpace(startFrame, sectionUp)
 
 		for i = 1, samples do
-			local point = pointAt(startPoint, controlA, controlB, finishPoint, i / samples)
+			local point = pointAt(startPoint, controlA, controlB, finishPoint, i / samples, lateral)
 			local chord = point - previousPoint
-			local length = chord.Magnitude
+			local length = vector.magnitude(chord)
 			local turn = 0
+
 			if length > 0 then
 				local direction = if planar
-					then tangentAt(startPoint, controlA, controlB, finishPoint, i / samples)
-					else chord.Unit
-				turn = math.acos(math.clamp(previousDirection:Dot(direction), -1, 1))
+					then tangentAt(startPoint, controlA, controlB, finishPoint, i / samples, lateral)
+					else vector.normalize(chord)
+
+				turn = math.acos(math.clamp(vector.dot(previousDirection, direction), -1, 1))
 				previousDirection = direction
 			end
+
+			local surfaceTurn = 0
+
+			if not planar and sharedSide and tangentCorner ~= nil then
+				local tangent = tangentAt(startPoint, controlA, controlB, finishPoint, i / samples, lateral)
+				local up = vector.normalize(vector.cross(startSide, tangent))
+				surfaceTurn = math.acos(math.clamp(vector.dot(previousUp, up), -1, 1))
+				previousUp = up
+			end
+
 			totalLength += length
 			totalTurn += turn
-			totalMeasure += math.sqrt(length * turn) + turn * 2 + length / templateLength * 0.05
-			measures[i + 1] = totalMeasure
+			-- A spatial bend can turn sideways while its surface tilts sharply.
+			-- Redistribute detail toward that tilt without increasing the count.
+			totalMeasure += math.sqrt(length * turn) + turn * 2 + surfaceTurn * 14 + length / templateLength * 0.05
+			MEASURES[i + 1] = totalMeasure
 			previousPoint = point
 		end
 
-		local endTurn = math.acos(math.clamp(previousDirection:Dot(-endNormal), -1, 1))
-		totalTurn += endTurn
-		totalMeasure += endTurn * 2
-		measures[samples + 1] = totalMeasure
+		do
+			local endTurn = math.acos(math.clamp(vector.dot(previousDirection, -endNormal), -1, 1))
+			totalTurn += endTurn
+			totalMeasure += endTurn * 2
+			MEASURES[samples + 1] = totalMeasure
+		end
 
 		local errorLimit: number
 		do
-			local crossSquared = cross:Dot(cross)
 			local turnSegments = math.ceil(totalTurn / math.rad(5))
 
 			-- Angle alone overestimates detail on small bends. Estimate chord error
 			-- relative to the width across the bend plane, which also keeps detail
 			-- consistent when the selected ends have different heights.
-			local axisA, axisB = ShapeUtils.otherNormals(localNormal)
-			local width = if crossSquared > 1e-10
-				then 2 * crossSectionRadius(startFrame, halfSection, cross.Unit)
-				else math.min(size:Dot(axisA), size:Dot(axisB))
-			errorLimit = width * (if guideOffset ~= Vector3.zero then 0.003 else 0.002)
+			local axisA, axisB = ShapeUtils.otherNormals(CAST_VECTOR3(localNormal))
+			local width = if hasCurveAxis
+				then 2 * crossSectionRadius(startFrame, halfSection, crossAxis)
+				else math.min(vector.dot(size, CAST_VECTOR(axisA)), vector.dot(size, CAST_VECTOR(axisB)))
+
+			errorLimit = width * (if guideOffset == vector.zero then 0.002 elseif not planar then 0.004 else 0.003)
+
+			if planar and guideOffset ~= vector.zero then
+				errorLimit = math.max(errorLimit, totalLength * 0.002)
+			end
 			local errorSegments = math.ceil(math.sqrt(totalLength * totalTurn / (8 * errorLimit)))
-			turnSegments = math.min(turnSegments, errorSegments)
+
+			if not isTwistedSpatial then
+				turnSegments = math.min(turnSegments, errorSegments)
+			end
 
 			-- Reserve the two tangent segments without making every sample a clone.
-			count = requestedSegments
-				or math.max(
-					1,
-					math.ceil(totalLength / templateLength),
-					if turnSegments > 1 then turnSegments + 1 else turnSegments
-				)
+			local turnCount = if turnSegments > 1 then turnSegments + 1 else turnSegments
+			count = requestedSegments or math.max(1, math.ceil(totalLength / templateLength), turnCount)
 		end
-		tangentSegments = planar and count >= 3
+		useEndpointDirections = count >= 3
+		usesTangentSegments = planar and useEndpointDirections
 
 		do
+			local intervals = if usesTangentSegments then count - 1 else count
 			local sample = 1
-			local intervals = if tangentSegments then count - 1 else count
+
 			for i = 1, intervals do
 				local progress = i / intervals
 				-- Reverse bends need smaller direction changes where they meet the
 				-- selected parts. Redistribute the existing samples toward both ends.
-				if tangentSegments and tangentCorner == nil then
+				if isTwistedSpatial then
+					local squared = progress * progress
+					local cubic = squared * (3 - 2 * progress)
+					local quintic = squared * progress * (10 + progress * (-15 + 6 * progress))
+					progress = cubic + (quintic - cubic) * 0.25
+				elseif tangentCorner == nil or not planar then
 					progress = (progress + progress * progress * (3 - 2 * progress)) / 2
 				end
 				local targetMeasure = totalMeasure * progress
 
-				while sample < samples and measures[sample + 1] < targetMeasure do
+				while sample < samples and MEASURES[sample + 1] < targetMeasure do
 					sample += 1
 				end
 
-				local span = measures[sample + 1] - measures[sample]
-				local fraction = if span > 0 then (targetMeasure - measures[sample]) / span else 0
+				local sampleMeasure = MEASURES[sample]
+				local span = MEASURES[sample + 1] - sampleMeasure
+				local fraction = if span > 0 then (targetMeasure - sampleMeasure) / span else 0
 				local t = math.clamp((sample - 1 + fraction) / samples, 0, 1)
 				parameters[i + 1] = t
 			end
-			parameters[#parameters] = 1
+			parameterCount = intervals + 1
+			parameters[parameterCount] = 1
 		end
 
-		if tangentSegments and requestedSegments == nil and guideOffset ~= Vector3.zero then
+		if usesTangentSegments and requestedSegments == nil and guideOffset ~= vector.zero then
 			local turnAxis = -cross
-			local subdivided: boolean
+			local subdivided = false
 
 			repeat
 				subdivided = false
-				local refined = { parameters[1] }
-				for i = 1, #parameters - 1 do
-					local left, right = parameters[i], parameters[i + 1]
+				local refinedCount = 1
+				scratchParameters[1] = parameters[1]
+
+				for i = 1, parameterCount - 1 do
+					local left = parameters[i]
+					local right = parameters[i + 1]
 					local middle = (left + right) / 2
-					local a = pointAt(startPoint, controlA, controlB, finishPoint, left)
-					local b = pointAt(startPoint, controlA, controlB, finishPoint, right)
-					local midpoint = pointAt(startPoint, controlA, controlB, finishPoint, middle)
-					local errorSquared = surfaceIntervalError(left, right, startPoint, controlA, controlB, finishPoint)
+					local a = pointAt(startPoint, controlA, controlB, finishPoint, left, lateral)
+					local b = pointAt(startPoint, controlA, controlB, finishPoint, right, lateral)
+					local midpoint = pointAt(startPoint, controlA, controlB, finishPoint, middle, lateral)
+					local errorSquared =
+						surfaceIntervalError(left, right, startPoint, controlA, controlB, finishPoint, lateral)
+
 					if
 						errorSquared > errorLimit * errorLimit
 						and middle > left
@@ -387,146 +552,251 @@ local function plan(
 						and midpoint ~= a
 						and midpoint ~= b
 					then
-						refined[#refined + 1] = middle
+						refinedCount += 1
+						scratchParameters[refinedCount] = middle
 						subdivided = true
 					end
-					refined[#refined + 1] = right
+
+					refinedCount += 1
+					scratchParameters[refinedCount] = right
 				end
-				parameters = refined
+
+				parameters, scratchParameters = scratchParameters, parameters
+				parameterCount = refinedCount
 			until not subdivided
 
 			-- Keep both endpoint transitions; omit redundant samples on the crest.
-			if #parameters >= 5 then
-				local simplified = { parameters[1], parameters[2] }
+			if parameterCount >= 5 then
+				local simplifiedCount = 2
+				scratchParameters[1] = parameters[1]
+				scratchParameters[2] = parameters[2]
 
-				for i = 3, #parameters - 2 do
-					local left, middle, right = simplified[#simplified], parameters[i], parameters[i + 1]
-					local a = tangentAt(startPoint, controlA, controlB, finishPoint, left)
-					local b = tangentAt(startPoint, controlA, controlB, finishPoint, middle)
-					local c = tangentAt(startPoint, controlA, controlB, finishPoint, right)
-					local redundant = a:Cross(b):Dot(turnAxis) >= 0
-						and b:Cross(c):Dot(turnAxis) >= 0
-						and a:Dot(c) >= math.cos(math.rad(15))
-						and surfaceIntervalError(left, right, startPoint, controlA, controlB, finishPoint)
+				for i = 3, parameterCount - 2 do
+					local left = scratchParameters[simplifiedCount]
+					local middle = parameters[i]
+					local right = parameters[i + 1]
+					local a = tangentAt(startPoint, controlA, controlB, finishPoint, left, lateral)
+					local b = tangentAt(startPoint, controlA, controlB, finishPoint, middle, lateral)
+					local c = tangentAt(startPoint, controlA, controlB, finishPoint, right, lateral)
+					local redundant = vector.dot(vector.cross(a, b), turnAxis) >= 0
+						and vector.dot(vector.cross(b, c), turnAxis) >= 0
+						and vector.dot(a, c) >= math.cos(math.rad(15))
+						and surfaceIntervalError(left, right, startPoint, controlA, controlB, finishPoint, lateral)
 							<= errorLimit * errorLimit
+
 					if not redundant then
-						simplified[#simplified + 1] = middle
+						simplifiedCount += 1
+						scratchParameters[simplifiedCount] = middle
 					end
 				end
-				simplified[#simplified + 1] = parameters[#parameters - 1]
-				simplified[#simplified + 1] = parameters[#parameters]
-				parameters = simplified
+
+				scratchParameters[simplifiedCount + 1] = parameters[parameterCount - 1]
+				scratchParameters[simplifiedCount + 2] = parameters[parameterCount]
+				parameters, scratchParameters = scratchParameters, parameters
+				parameterCount = simplifiedCount + 2
 			end
-			count = #parameters
+			count = parameterCount
 		end
 	end
 
-	local points = { startPoint }
+	POINTS[1] = startPoint
+
 	do
-		local previousTangentPoint, previousTangent = startPoint, startNormal
-		for i = 2, #parameters do
+		local previousTangentPoint = startPoint
+		local previousTangent = startNormal
+
+		for i = 2, parameterCount do
 			local t = parameters[i]
-			local point = pointAt(startPoint, controlA, controlB, finishPoint, t)
-			if tangentSegments then
-				local tangent = tangentAt(startPoint, controlA, controlB, finishPoint, t)
-				points[i] = intersectTangents(previousTangentPoint, previousTangent, point, tangent)
-				previousTangentPoint, previousTangent = point, tangent
+			local point = pointAt(startPoint, controlA, controlB, finishPoint, t, lateral)
+
+			if usesTangentSegments then
+				local tangent = tangentAt(startPoint, controlA, controlB, finishPoint, t, lateral)
+				POINTS[i] = intersectTangents(previousTangentPoint, previousTangent, point, tangent)
+				previousTangentPoint = point
+				previousTangent = tangent
 			else
-				points[i] = point
+				POINTS[i] = point
 			end
 		end
-		points[count + 1] = finishPoint
+		POINTS[count + 1] = finishPoint
 
-		if tangentSegments then
+		if usesTangentSegments then
 			-- An inflection can replace a tangent intersection with a midpoint.
 			-- Keep the endpoint segments on their source faces even at coarse counts.
-			local firstOffset, lastOffset = points[2] - startPoint, points[count] - finishPoint
-			if firstOffset:Cross(startNormal).Magnitude > 0.00001 then
-				points[2] = startPoint + startNormal * math.max(0.001, firstOffset:Dot(startNormal))
+			local firstOffset = POINTS[2] - startPoint
+			local lastOffset = POINTS[count] - finishPoint
+
+			if vector.magnitude(vector.cross(firstOffset, startNormal)) > 0.00001 then
+				POINTS[2] = startPoint + startNormal * math.max(0.001, vector.dot(firstOffset, startNormal))
 			end
-			if lastOffset:Cross(endNormal).Magnitude > 0.00001 then
-				points[count] = finishPoint + endNormal * math.max(0.001, lastOffset:Dot(endNormal))
+
+			if vector.magnitude(vector.cross(lastOffset, endNormal)) > 0.00001 then
+				POINTS[count] = finishPoint + endNormal * math.max(0.001, vector.dot(lastOffset, endNormal))
 			end
 		end
 
 		if count == 2 and tangentCorner then
-			points[2] = tangentCorner
-		elseif count >= 3 and not tangentSegments then
-			-- Intersect each endpoint tangent with the next chord. This keeps the
-			-- first/last surfaces flush without reversing the neighboring bend.
-
-			local first = tangentPoint(startPoint, startNormal, points[2], points[3])
-			local last = tangentPoint(finishPoint, endNormal, points[count - 1], points[count])
-			points[2], points[count] = first, last
+			POINTS[2] = tangentCorner
+		elseif useEndpointDirections and not usesTangentSegments then
+			-- Project the endpoint vertices onto their forward tangent rays. A
+			-- skew chord intersection can lie behind the face and reverse the end.
+			POINTS[2] = startPoint + startNormal * math.max(0.001, vector.dot((POINTS[2] - startPoint), startNormal))
+			POINTS[count] = finishPoint
+				+ endNormal * math.max(0.001, vector.dot((POINTS[count] - finishPoint), endNormal))
 		end
 	end
 
-	local segments: { Segment } = {}
+	local transportRoll = 0
+	do
+		local transported = startRotation
+		local previousPoint = startPoint
+		local previousDirection = startNormal
+
+		for i = 1, count do
+			local point = POINTS[i + 1]
+			local chord = point - previousPoint
+
+			local direction = if useEndpointDirections and i == 1
+				then startNormal
+				elseif useEndpointDirections and i == count then -endNormal
+				else vector.normalize(chord)
+			DIRECTIONS[i] = direction
+
+			if isTwistedSpatial then
+				transported = rotateAlong(transported, previousDirection, direction, localNormal, -cross)
+				TRANSPORTED_FRAMES[i] = transported
+			end
+			previousDirection = direction
+			previousPoint = point
+		end
+
+		if isTwistedSpatial and count > 1 then
+			local up = CFrame_VectorToWorldSpace(transported, sectionUp)
+			local targetUp = CFrame_VectorToWorldSpace(endRotation, sectionUp)
+			transportRoll =
+				math.atan2(vector.dot(previousDirection, vector.cross(up, targetUp)), vector.dot(up, targetUp))
+		end
+	end
+
+	local parts = table.create(count) :: { BasePart }
+
 	do
 		local previousPoint = startPoint
 
 		for i = 1, count do
-			local point = points[i + 1]
-			local chord = point - previousPoint
-			local length = chord.Magnitude
-
+			local point = POINTS[i + 1]
 			-- Endpoint vertices lie on their tangents. Use those exact directions
 			-- instead of amplifying world-coordinate rounding on very short chords.
-			local direction = if count >= 3 and i == 1
-				then startNormal
-				else if count >= 3 and i == count then -endNormal else chord.Unit
-			local midpoint = if count >= 3 and i == 1
-				then startPoint + direction * (length / 2)
-				else if count >= 3 and i == count
-					then finishPoint - direction * (length / 2)
-					else (previousPoint + point) / 2
-			-- Refer each orientation to the source frame. Transporting the previous
-			-- frame accumulates roll on a spatial curve and twists the target face.
-			local rotation = rotateAlong(startFrame.Rotation, startNormal, direction, localNormal, -cross)
-			segments[i] = {
-				CFrame = CFrame.new(midpoint - rotation:VectorToWorldSpace(guideOffset)) * rotation,
-				Size = size + dimension * (length - templateLength),
-			}
+			local direction = DIRECTIONS[i]
+			local length = vector.magnitude(point - previousPoint)
+			--stylua: ignore
+			local midpoint = if useEndpointDirections and i == 1 then
+					startPoint + direction * (length / 2)
+				elseif useEndpointDirections and i == count then
+					finishPoint - direction * (length / 2)
+				else
+					(previousPoint + point) / 2
+
+			-- Spatial curves use a rotation-minimizing transported frame. Apply
+			-- only the residual endpoint roll, spread smoothly across the arc.
+			local rotation: CFrame
+			if isTwistedSpatial then
+				rotation = TRANSPORTED_FRAMES[i]
+				if count > 1 then
+					local progress = (i - 1) / (count - 1)
+					rotation = CFrame_fromAxisAngle(direction, transportRoll * progress * progress * (3 - 2 * progress))
+						* rotation
+				end
+			else
+				local reference = if planar or count == 1
+					then startRotation
+					else startRotation:Lerp(endRotation, (i - 1) / (count - 1))
+				rotation = rotateAlong(
+					reference,
+					CFrame_VectorToWorldSpace(reference, localNormal),
+					direction,
+					localNormal,
+					-cross
+				)
+			end
+			if not isTwistedSpatial and hasEndpointRoll and count > 1 then
+				local progress = (i - 1) / (count - 1)
+				rotation = CFrame_fromAxisAngle(direction, endRoll * progress * progress * (3 - 2 * progress))
+					* rotation
+			end
+			if not planar and sharedSide and vector.magnitude(vector.cross(startSide, direction)) > 0.00001 then
+				-- Shared side axes define the same section plane at both ends.
+				-- Keep the up vector in that plane instead of introducing roll.
+				local up = vector.normalize(vector.cross(startSide, direction))
+				rotation = CFrame_fromMatrix(vector.zero, direction, up, vector.cross(direction, up)) * sectionRotation
+			end
+			local part = template:Clone()
+			part.CFrame = CFrame_fromVector(midpoint - CFrame_VectorToWorldSpace(rotation, guideOffset)) * rotation
+			part.Size = CAST_VECTOR3(size + dimension * (length - templateLength))
+			parts[i] = part
 			previousPoint = point
 		end
 	end
 
 	do
-		-- Chords only touch at their centerlines. Extend to the outermost point
-		-- of each miter plane to close the triangular openings at every bend.
-		-- This is thickness * tan(half the bend angle) for a planar strip, rather
-		-- than a fixed overlap that would fail for thicker parts or fewer segments.
 		local previousDirection = startNormal
 
-		for i, segment in segments do
-			local direction = segment.CFrame:VectorToWorldSpace(localNormal)
-			local nextDirection = if i < count
-				then segments[i + 1].CFrame:VectorToWorldSpace(localNormal)
-				else -endNormal
+		for i, part in parts do
+			local direction = DIRECTIONS[i]
+			local nextDirection = if i < count then DIRECTIONS[i + 1] else -endNormal
 			local startPlane = if i == 1 then startNormal else previousDirection + direction
 			local endPlane = if i == count then -endNormal else direction + nextDirection
+			local offset = CFrame_VectorToWorldSpace(part.CFrame, guideOffset)
+			local startReach = miterExtension(part.CFrame, halfSection, direction, startPlane)
+				- vector.dot(offset, startPlane) / vector.dot(direction, startPlane)
+			local endReach = miterExtension(part.CFrame, halfSection, direction, endPlane)
+				+ vector.dot(offset, endPlane) / vector.dot(direction, endPlane)
 
-			local offset = segment.CFrame:VectorToWorldSpace(guideOffset)
-			local startReach = miterExtension(segment.CFrame, halfSection, direction, startPlane)
-				- offset:Dot(startPlane) / direction:Dot(startPlane)
-			local endReach = miterExtension(segment.CFrame, halfSection, direction, endPlane)
-				+ offset:Dot(endPlane) / direction:Dot(endPlane)
-			local chordLength = segment.Size:Dot(dimension)
-			-- On a tight bend the inner miter corner can pass the OTHER end of
-			-- a short chord. Cover both complete miter sections, including that case.
-			local before = if i == 1 and count > 1 then 0 else math.max(startReach, endReach - chordLength)
-			local after = if i == count and count > 1 then 0 else math.max(endReach, startReach - chordLength)
-
-			segment.Size += dimension * (before + after)
-			segment.CFrame += direction * ((after - before) / 2)
+			if not planar or hasEndpointRoll then
+				if i > 1 then
+					local previous = parts[i - 1].CFrame
+					local previousOffset = CFrame_VectorToWorldSpace(previous, guideOffset)
+					startReach = math.max(
+						startReach,
+						vector.dot((previousOffset - offset), direction)
+							+ crossSectionRadius(previous, halfSection, direction)
+					)
+				end
+				if i < count then
+					local following = parts[i + 1].CFrame
+					local nextOffset = CFrame_VectorToWorldSpace(following, guideOffset)
+					endReach = math.max(
+						endReach,
+						vector.dot((offset - nextOffset), direction)
+							+ crossSectionRadius(following, halfSection, direction)
+					)
+				end
+			end
+			START_REACHES[i], END_REACHES[i] = startReach, endReach
 			previousDirection = direction
 		end
+
+		for i, part in parts do
+			local before: number
+			local after: number
+
+			if isTwistedSpatial then
+				-- Whichever neighbor needs less reach owns this joint. Ties go
+				-- to the follower, except at the first joint: extending segment
+				-- two backward can cross the selected front face.
+				before = if i > 2 and START_REACHES[i] <= END_REACHES[i - 1] then START_REACHES[i] else 0
+				after = if i < count and (i == 1 or END_REACHES[i] < START_REACHES[i + 1]) then END_REACHES[i] else 0
+			else
+				local chordLength = vector.dot(CAST_VECTOR(part.Size), dimension)
+				before = if i == 1 and count > 1 then 0 else math.max(START_REACHES[i], END_REACHES[i] - chordLength)
+				after = if i == count and count > 1 then 0 else math.max(END_REACHES[i], START_REACHES[i] - chordLength)
+			end
+
+			part.Size += CAST_VECTOR3(dimension * (before + after))
+			part.CFrame = translateCFrameToVectorWorldSpace(part.CFrame, DIRECTIONS[i] * ((after - before) / 2))
+		end
 	end
-	return segments
+	return parts
 end
 
-return {
-	plan = plan,
-	getTangents = getTangents,
-	getTargetPoint = getTargetPoint,
-}
+return table.freeze(ArcJoin)
