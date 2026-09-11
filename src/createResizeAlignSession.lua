@@ -405,7 +405,7 @@ local function createResizeAlignSession(
 					face,
 					activeSettings.ResizeMode,
 					activeSettings.AcuteWedgeJoin,
-					activeSettings.ArcJoin,
+					activeSettings.SplineJoin,
 					activeSettings.UseCylinderForRoundedJoin
 				)
 			end

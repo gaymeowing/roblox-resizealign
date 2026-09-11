@@ -1,11 +1,11 @@
 local Settings = require(script.Parent.Settings)
-local ArcJoin = require(script.Parent.ArcJoin)
+local SplineJoin = require(script.Parent.SplineJoin)
 local ShapeUtils = require(script.Parent.ShapeUtils)
 local doExtend = require(script.Parent.doExtend)
 local TestTypes = require(script.Parent.TestTypes)
 
 type TestContext = TestTypes.TestContext
-type Segment = ArcJoin.Segment
+type Segment = SplineJoin.Segment
 
 local X_AXIS = vector.create(1, 0, 0)
 local Y_AXIS = vector.create(0, 1, 0)
@@ -379,7 +379,7 @@ end
 return function(t: TestContext)
 
 	-- Profile frames below come from the highlighted slope edges, independently
-	-- of the Arc Join planner. Test both endpoints and both selection orders.
+	-- of the Spline Join planner. Test both endpoints and both selection orders.
 	local slopeCases = {
 		{
 			Name = "wedge",
@@ -432,7 +432,7 @@ return function(t: TestContext)
 	}
 	for _, fixture in slopeCases do
 		for _, reverse in SELECTION_ORDERS do
-			t.test(`ArcJoin: {fixture.Name} slope connects in {if reverse then "reverse" else "forward"} order`, function()
+			t.test(`SplineJoin: {fixture.Name} slope connects in {if reverse then "reverse" else "forward"} order`, function()
 				local folder = createFolder()
 				local slope = Instance.new(fixture.Class)
 				slope.Size = CAST_VECTOR3(vector.create(4, 2, 6))
@@ -466,10 +466,10 @@ return function(t: TestContext)
 					first, last = last, first
 				end
 
-				local options = table.clone(Settings.DefaultArcJoinOptions)
+				local options = table.clone(Settings.DefaultSplineJoinOptions)
 				options.AutomaticSegments = false
 				options.Segments = 12
-				doExtend(first, last, "ArcJoin", nil, options)
+				doExtend(first, last, "SplineJoin", nil, options)
 
 				targetFace = target.CFrame
 					* CFrame_fromVector(normalFromId(fixture.TargetFace) * CAST_VECTOR(target.Size) / 2)
@@ -511,23 +511,23 @@ return function(t: TestContext)
 
 	-- Planner state
 
-	t.test("ArcJoin: reused buffers keep retained plans and short subsequent calls intact", function()
+	t.test("SplineJoin: reused buffers keep retained plans and short subsequent calls intact", function()
 		local finish = vector.create(10, 10, 0)
 		local size = vector.create(4, 2, 3)
 		local template = createPart(size)
-		local retained = assert(ArcJoin.plan(template, CFrame.identity, finish, -Y_AXIS, X_AXIS, 8))
+		local retained = assert(SplineJoin.plan(template, CFrame.identity, finish, -Y_AXIS, X_AXIS, 8))
 
 		local saved: { Segment } = {}
 		for i, segment in retained do
 			saved[i] = { CFrame = segment.CFrame, Size = segment.Size }
 		end
 
-		ArcJoin.plan(template, CFrame.identity, vector.create(4096, 0, 0), -X_AXIS, X_AXIS, 1024)
+		SplineJoin.plan(template, CFrame.identity, vector.create(4096, 0, 0), -X_AXIS, X_AXIS, 1024)
 
 		local start, target, firstSize, targetSize, normal, targetNormal = tiltedJoin(false, 1)
-		local point, offset, rotation = ArcJoin.getTargetPoint(start, target, firstSize, targetSize, normal, targetNormal)
+		local point, offset, rotation = SplineJoin.getTargetPoint(start, target, firstSize, targetSize, normal, targetNormal)
 		template.Size = CAST_VECTOR3(firstSize)
-		ArcJoin.plan(
+		SplineJoin.plan(
 			template,
 			start,
 			point,
@@ -539,7 +539,7 @@ return function(t: TestContext)
 		)
 
 		template.Size = CAST_VECTOR3(size)
-		local repeated = assert(ArcJoin.plan(template, CFrame.identity, finish, -Y_AXIS, X_AXIS, 8))
+		local repeated = assert(SplineJoin.plan(template, CFrame.identity, finish, -Y_AXIS, X_AXIS, 8))
 
 		t.expect(#retained).toBe(8)
 		t.expect(#repeated).toBe(8)
@@ -552,7 +552,7 @@ return function(t: TestContext)
 	end)
 
 	-- Workspace regressions
-	t.test("ArcJoin: K to H fills the seam immediately before the target face", function()
+	t.test("SplineJoin: K to H fills the seam immediately before the target face", function()
 		local folder = createFolder()
 		local kFrame, kSize = workspacePair("K")
 		local hFrame, hSize = workspacePair("H")
@@ -560,7 +560,7 @@ return function(t: TestContext)
 		local h = createPart(hSize, hFrame, folder)
 		local target = h.CFrame * CFrame.new(-hSize.x / 2, (hSize.y - kSize.y) / 2, 0)
 
-		doExtend({ Object = k, Normal = Enum.NormalId.Right }, { Object = h, Normal = Enum.NormalId.Left }, "ArcJoin")
+		doExtend({ Object = k, Normal = Enum.NormalId.Right }, { Object = h, Normal = Enum.NormalId.Left }, "SplineJoin")
 
 		-- These points lie just beneath the top surface, where the old
 		-- miters left a slit despite the final face itself matching H.
@@ -592,7 +592,7 @@ return function(t: TestContext)
 	end)
 
 	-- Accepted C/E geometry at 0.6 padding. These values are intentionally
-	-- literal: deriving the expectation with ArcJoin.plan would repeat its bugs.
+	-- literal: deriving the expectation with SplineJoin.plan would repeat its bugs.
 	local expectedJoins = {
 		{
 			Reverse = false,
@@ -620,14 +620,14 @@ return function(t: TestContext)
 		},
 	}
 	for _, fixture in expectedJoins do
-		t.test(`ArcJoin: {if fixture.Reverse then "E to C" else "C to E"} matches the expected generated parts`, function()
+		t.test(`SplineJoin: {if fixture.Reverse then "E to C" else "C to E"} matches the expected generated parts`, function()
 			local folder = createFolder()
 			local cFrame, cSize = workspacePair("C")
 			local eFrame, eSize = workspacePair("E")
 			local c = createPart(cSize, cFrame, folder)
 			local e = createPart(eSize, eFrame, folder)
 
-			local options = table.clone(Settings.DefaultArcJoinOptions)
+			local options = table.clone(Settings.DefaultSplineJoinOptions)
 			options.Padding = 0.6
 			options.AutomaticSegments = true
 
@@ -642,7 +642,7 @@ return function(t: TestContext)
 			doExtend(
 				first,
 				second,
-				"ArcJoin",
+				"SplineJoin",
 				nil,
 				options
 			)
@@ -670,7 +670,7 @@ return function(t: TestContext)
 	for _, pair in joins do
 		for _, reverse in SELECTION_ORDERS do
 			local name = if reverse then `{pair[3]} {pair[4]} to {pair[1]} {pair[2]}` else table.concat(pair, " ")
-			t.test(`ArcJoin: workspace {name} keeps complete, flat endpoint faces`, function()
+			t.test(`SplineJoin: workspace {name} keeps complete, flat endpoint faces`, function()
 				local first, size = workspacePair(pair[1])
 				local second, targetSize = workspacePair(pair[3])
 				local normal = normalFromId(Enum.NormalId[pair[2]])
@@ -686,10 +686,10 @@ return function(t: TestContext)
 					local start = first * CFrame_fromVector(normal * size / 2 + normal * padding)
 					local target = second * CFrame_fromVector(targetNormal * targetSize / 2 + targetNormal * padding)
 					local finish, offset, rotation =
-						ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
+						SplineJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
 
 					local segments = assert(
-						ArcJoin.plan(
+						SplineJoin.plan(
 							template,
 							start,
 							finish,
@@ -700,7 +700,7 @@ return function(t: TestContext)
 							rotation
 						)
 					)
-					local tangentStart, tangentFinish = ArcJoin.getTangents(
+					local tangentStart, tangentFinish = SplineJoin.getTangents(
 						start,
 						finish,
 						CFrame_VectorToWorldSpace(target, targetNormal),
@@ -709,7 +709,7 @@ return function(t: TestContext)
 						rotation
 					)
 					local retained = assert(
-						ArcJoin.plan(
+						SplineJoin.plan(
 							template,
 							start,
 							finish,
@@ -832,7 +832,7 @@ return function(t: TestContext)
 			withParts(function(folder, a, b, faceA, faceB)
 				a.Size = CAST_VECTOR3(vector.create(4, thickness, 3))
 				b.Size = CAST_VECTOR3(vector.create(thickness, 4, 3))
-				local ignoredOptions = table.clone(Settings.DefaultArcJoinOptions)
+				local ignoredOptions = table.clone(Settings.DefaultSplineJoinOptions)
 				ignoredOptions.AutomaticSegments = false
 				ignoredOptions.Segments = 1
 				ignoredOptions.Padding = 100
@@ -878,7 +878,7 @@ return function(t: TestContext)
 	end)
 
 	-- Planner geometry
-	t.test("ArcJoin: three-segment reverse bends cover both complete endpoint faces", function()
+	t.test("SplineJoin: three-segment reverse bends cover both complete endpoint faces", function()
 		for _, reverse in SELECTION_ORDERS do
 			for _, mirror in SIGNS do
 				local start, target, size, targetSize, normal, targetNormal = tiltedJoin(reverse, mirror)
@@ -888,9 +888,9 @@ return function(t: TestContext)
 				target = translateCFrame(target, CFrame_VectorToWorldSpace(target, targetNormal) * 0.6)
 
 				local finish, offset =
-					ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
+					SplineJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
 				local segments = assert(
-					ArcJoin.plan(
+					SplineJoin.plan(
 						template,
 						start,
 						finish,
@@ -909,7 +909,7 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("ArcJoin: offset D/F endpoints retain their cross-section orientation", function()
+	t.test("SplineJoin: offset D/F endpoints retain their cross-section orientation", function()
 		local d = CFrame.new(-0.6036731, 14.7836733, 12.95) * CFrame.Angles(0, 0, -math.atan2(2, 3))
 		local f = CFrame.new(-11.85, 20.85, 15.275)
 		local dSize = vector.create(19.5422287, 2, 1)
@@ -927,9 +927,9 @@ return function(t: TestContext)
 				local start = first * CFrame_fromVector(normal * (size.x / 2 + padding))
 				local target = second * CFrame_fromVector(targetNormal * (targetSize.x / 2 + padding))
 				local finish, offset =
-					ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
+					SplineJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
 				local segments = assert(
-					ArcJoin.plan(
+					SplineJoin.plan(
 						template,
 						start,
 						finish,
@@ -961,7 +961,7 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("ArcJoin: automatic tangents can be retained and edited explicitly", function()
+	t.test("SplineJoin: automatic tangents can be retained and edited explicitly", function()
 		for _, reverse in SELECTION_ORDERS do
 			local start, target, size, targetSize, normal, targetNormal = tiltedJoin(reverse, 1)
 			local template = createPart(size)
@@ -970,14 +970,14 @@ return function(t: TestContext)
 			target = translateCFrame(target, CFrame_VectorToWorldSpace(target, targetNormal) * 0.6)
 
 			local finish, offset =
-				ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
+				SplineJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
 			local endNormal = CFrame_VectorToWorldSpace(target, targetNormal)
 			local tangentStart, tangentFinish =
-				ArcJoin.getTangents(start, finish, endNormal, normal, offset)
+				SplineJoin.getTangents(start, finish, endNormal, normal, offset)
 
-			local automatic = assert(ArcJoin.plan(template, start, finish, endNormal, normal, 8, offset))
+			local automatic = assert(SplineJoin.plan(template, start, finish, endNormal, normal, 8, offset))
 			local explicit =
-				assert(ArcJoin.plan(template, start, finish, endNormal, normal, 8, offset, nil, tangentStart, tangentFinish))
+				assert(SplineJoin.plan(template, start, finish, endNormal, normal, 8, offset, nil, tangentStart, tangentFinish))
 
 			for i, segment in automatic do
 				t.expect(explicit[i].CFrame).toBe(segment.CFrame)
@@ -987,7 +987,7 @@ return function(t: TestContext)
 			local original = tangentStart
 			tangentStart *= 1.5
 			local edited =
-				assert(ArcJoin.plan(template, start, finish, endNormal, normal, 8, offset, nil, tangentStart, tangentFinish))
+				assert(SplineJoin.plan(template, start, finish, endNormal, normal, 8, offset, nil, tangentStart, tangentFinish))
 
 			assert(
 				vector.magnitude(CAST_VECTOR(edited[4].CFrame.Position) - CAST_VECTOR(automatic[4].CFrame.Position))
@@ -999,18 +999,18 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("ArcJoin: explicit tangent directions can bend out of the endpoint plane", function()
+	t.test("SplineJoin: explicit tangent directions can bend out of the endpoint plane", function()
 		local size = vector.create(2, 0.5, 0.5)
 		local finish = vector.create(8, 6, 0)
 		local template = createPart(size)
 
 		local tangentStart, tangentFinish =
-			ArcJoin.getTangents(CFrame.identity, finish, -Y_AXIS, X_AXIS)
+			SplineJoin.getTangents(CFrame.identity, finish, -Y_AXIS, X_AXIS)
 		tangentStart += Z_AXIS * 4
 		tangentFinish += Z_AXIS * 2
 
 		local segments = assert(
-			ArcJoin.plan(
+			SplineJoin.plan(
 				template,
 				CFrame.identity,
 				finish,
@@ -1030,12 +1030,12 @@ return function(t: TestContext)
 		checkEndFace(segments[#segments], CFrame_fromVector(finish) * CFrame.Angles(0, 0, math.pi / 2), size)
 	end)
 
-	t.test("ArcJoin: manual count forms a curved connected chain", function()
+	t.test("SplineJoin: manual count forms a curved connected chain", function()
 		local size = vector.create(4, 2, 3)
 		local template = createPart(size)
 
 		local segments = assert(
-			ArcJoin.plan(template, CFrame.identity, vector.create(10, 10, 0), -Y_AXIS, X_AXIS, 12)
+			SplineJoin.plan(template, CFrame.identity, vector.create(10, 10, 0), -Y_AXIS, X_AXIS, 12)
 		)
 
 		t.expect(#segments).toBe(12)
@@ -1044,7 +1044,7 @@ return function(t: TestContext)
 		t.expect(segments[6].CFrame.X - segments[6].CFrame.Y > 3).toBe(true)
 	end)
 
-	t.test("ArcJoin: thick coarse and fine arcs cover every miter corner", function()
+	t.test("SplineJoin: thick coarse and fine arcs cover every miter corner", function()
 		local segmentCounts = { 3, 12, 48 }
 		for _, count in segmentCounts do
 			local widths = { 2, 8 }
@@ -1054,7 +1054,7 @@ return function(t: TestContext)
 				local finish = vector.create(10, 10, 0)
 
 				local segments =
-					assert(ArcJoin.plan(template, CFrame.identity, finish, -Y_AXIS, X_AXIS, count))
+					assert(SplineJoin.plan(template, CFrame.identity, finish, -Y_AXIS, X_AXIS, count))
 
 				checkPlan(segments, vector.zero, finish, X_AXIS, size)
 				checkMiters(segments, size)
@@ -1062,11 +1062,11 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("ArcJoin: target snaps to nearer top or bottom with clone thickness inset", function()
+	t.test("SplineJoin: target snaps to nearer top or bottom with clone thickness inset", function()
 		local target = CFrame.new(10, 0, 0) * CFrame.Angles(0, 0, 0.4)
 		for _, side in SIGNS do
 			local start = target * CFrame.new(-10, side * 20, 0)
-			local point = ArcJoin.getTargetPoint(
+			local point = SplineJoin.getTargetPoint(
 				start,
 				target,
 				vector.create(4, 2, 3),
@@ -1079,14 +1079,14 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("ArcJoin: taller templates align their edge to the shorter target", function()
+	t.test("SplineJoin: taller templates align their edge to the shorter target", function()
 		local target = CFrame.new(10, 0, 0) * CFrame.Angles(0, 0, 0.4)
 		local size = vector.create(4, 12, 3)
 		local template = createPart(size)
 		for _, side in SIGNS do
 			local start = target * CFrame.new(-10, -side * 20, 0)
 			local point =
-				ArcJoin.getTargetPoint(start, target, size, vector.create(4, 2, 3), X_AXIS, -X_AXIS)
+				SplineJoin.getTargetPoint(start, target, size, vector.create(4, 2, 3), X_AXIS, -X_AXIS)
 
 			-- Whichever side the shorter target occupies, the matching surface
 			-- is flush even though the clone's center lies beyond the target face.
@@ -1096,18 +1096,18 @@ return function(t: TestContext)
 			local surface = point + targetUp * (side * size.y / 2)
 			near(surface, CAST_VECTOR(target.Position) + targetUp * side)
 
-			local segments = assert(ArcJoin.plan(template, start, point, -CAST_VECTOR(target.RightVector), X_AXIS, 12))
+			local segments = assert(SplineJoin.plan(template, start, point, -CAST_VECTOR(target.RightVector), X_AXIS, 12))
 			checkPlan(segments, CAST_VECTOR(start.Position), point, X_AXIS, size)
 		end
 	end)
 
-	t.test("ArcJoin: unequal-height tilted joins stay on the matching edge without an S bend", function()
+	t.test("SplineJoin: unequal-height tilted joins stay on the matching edge without an S bend", function()
 		for _, mirror in SIGNS do
 			for _, reverse in SELECTION_ORDERS do
 				local start, target, firstSize, secondSize, n1, n2 = tiltedJoin(reverse, mirror)
 				local template = createPart(firstSize)
 
-				local finish = ArcJoin.getTargetPoint(start, target, firstSize, secondSize, n1, n2)
+				local finish = SplineJoin.getTargetPoint(start, target, firstSize, secondSize, n1, n2)
 
 				near(
 					finish,
@@ -1116,7 +1116,7 @@ return function(t: TestContext)
 				)
 
 				local segments =
-					assert(ArcJoin.plan(template, start, finish, CFrame_VectorToWorldSpace(target, n2), n1, 24))
+					assert(SplineJoin.plan(template, start, finish, CFrame_VectorToWorldSpace(target, n2), n1, 24))
 
 				near(CFrame_VectorToWorldSpace(segments[1].CFrame, n1), CFrame_VectorToWorldSpace(start, n1))
 				near(
@@ -1141,14 +1141,14 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("ArcJoin: automatic tilted joins distribute the turn through both endpoints", function()
+	t.test("SplineJoin: automatic tilted joins distribute the turn through both endpoints", function()
 		for _, reverse in SELECTION_ORDERS do
 			local start, target, size, targetSize, normal, targetNormal = tiltedJoin(reverse, 1)
 			local template = createPart(size)
 
-			local finish = ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
+			local finish = SplineJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
 			local segments = assert(
-				ArcJoin.plan(
+				SplineJoin.plan(
 					template,
 					start,
 					finish,
@@ -1180,7 +1180,7 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("ArcJoin: padding does not oversample tiny reverse bends", function()
+	t.test("SplineJoin: padding does not oversample tiny reverse bends", function()
 		for _, reverse in SELECTION_ORDERS do
 			local paddingValues = { 0.2, 0.3, 0.4, 0.5, 0.6 }
 
@@ -1192,11 +1192,11 @@ return function(t: TestContext)
 				target = translateCFrame(target, CFrame_VectorToWorldSpace(target, targetNormal) * padding)
 
 				local finish, surfaceOffset =
-					ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
+					SplineJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
 				local endNormal = CFrame_VectorToWorldSpace(target, targetNormal)
 
 				local segments =
-					assert(ArcJoin.plan(template, start, finish, endNormal, normal, nil, surfaceOffset))
+					assert(SplineJoin.plan(template, start, finish, endNormal, normal, nil, surfaceOffset))
 
 				assert(#segments <= 13, `Padding {padding} generated {#segments} segments`)
 				checkPlan(segments, CAST_VECTOR(start.Position), finish, normal, size)
@@ -1206,7 +1206,7 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("ArcJoin: C-first padding keeps inflection segments inside the join", function()
+	t.test("SplineJoin: C-first padding keeps inflection segments inside the join", function()
 		local translations = { vector.zero, vector.create(-10, 20.85, 2.5) }
 
 		for _, offset in translations do
@@ -1223,9 +1223,9 @@ return function(t: TestContext)
 				)
 
 				local finish, surfaceOffset =
-					ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
+					SplineJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
 				local segments = assert(
-					ArcJoin.plan(
+					SplineJoin.plan(
 						template,
 						start,
 						finish,
@@ -1255,7 +1255,7 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("ArcJoin: padded E/C detail stays similar in either selection order", function()
+	t.test("SplineJoin: padded E/C detail stays similar in either selection order", function()
 		local counts = {}
 
 		for _, reverse in SELECTION_ORDERS do
@@ -1266,9 +1266,9 @@ return function(t: TestContext)
 			target = translateCFrame(target, CFrame_VectorToWorldSpace(target, targetNormal) * 0.6)
 
 			local finish, surfaceOffset =
-				ArcJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
+				SplineJoin.getTargetPoint(start, target, size, targetSize, normal, targetNormal)
 			local segments = assert(
-				ArcJoin.plan(
+				SplineJoin.plan(
 					template,
 					start,
 					finish,
@@ -1311,7 +1311,7 @@ return function(t: TestContext)
 		t.expect(counts[2]).toBe(8)
 	end)
 
-	t.test("ArcJoin: all six template faces keep their cross sections", function()
+	t.test("SplineJoin: all six template faces keep their cross sections", function()
 		local size = vector.create(4, 2, 3)
 		local template = createPart(size)
 
@@ -1322,37 +1322,37 @@ return function(t: TestContext)
 			local finish = CFrame_PointToWorldSpace(start, (normal + turn) * 10)
 
 			local segments =
-				assert(ArcJoin.plan(template, start, finish, -CFrame_VectorToWorldSpace(start, turn), normal, 9))
+				assert(SplineJoin.plan(template, start, finish, -CFrame_VectorToWorldSpace(start, turn), normal, 9))
 
 			checkPlan(segments, CAST_VECTOR(start.Position), finish, normal, size)
 		end
 	end)
 
-	t.test("ArcJoin: automatic count responds to length and curvature", function()
+	t.test("SplineJoin: automatic count responds to length and curvature", function()
 		local size = vector.create(4, 2, 3)
 		local template = createPart(size)
 
 		local straight =
-			assert(ArcJoin.plan(template, CFrame.identity, vector.create(8, 0, 0), -X_AXIS, X_AXIS))
+			assert(SplineJoin.plan(template, CFrame.identity, vector.create(8, 0, 0), -X_AXIS, X_AXIS))
 		local long =
-			assert(ArcJoin.plan(template, CFrame.identity, vector.create(80, 0, 0), -X_AXIS, X_AXIS))
+			assert(SplineJoin.plan(template, CFrame.identity, vector.create(80, 0, 0), -X_AXIS, X_AXIS))
 		local curved =
-			assert(ArcJoin.plan(template, CFrame.identity, vector.create(5, 5, 0), -Y_AXIS, X_AXIS))
+			assert(SplineJoin.plan(template, CFrame.identity, vector.create(5, 5, 0), -Y_AXIS, X_AXIS))
 
 		t.expect(#long > #straight).toBe(true)
 		t.expect(#curved >= 9).toBe(true)
 		checkPlan(straight, vector.zero, vector.create(8, 0, 0), X_AXIS, size)
 	end)
 
-	t.test("ArcJoin: large gaps and manual counts can exceed 512 segments", function()
+	t.test("SplineJoin: large gaps and manual counts can exceed 512 segments", function()
 		local size = vector.create(4, 2, 3)
 		local finish = vector.create(4096, 0, 0)
 		local template = createPart(size)
 
-		local automatic = assert(ArcJoin.plan(template, CFrame.identity, finish, -X_AXIS, X_AXIS))
+		local automatic = assert(SplineJoin.plan(template, CFrame.identity, finish, -X_AXIS, X_AXIS))
 		t.expect(#automatic).toBe(1024)
 
-		local manual = assert(ArcJoin.plan(template, CFrame.identity, finish, -X_AXIS, X_AXIS, 768))
+		local manual = assert(SplineJoin.plan(template, CFrame.identity, finish, -X_AXIS, X_AXIS, 768))
 		t.expect(#manual).toBe(768)
 
 		local plans = { automatic, manual }
@@ -1369,27 +1369,27 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("ArcJoin: skew and same-facing endpoints remain connected", function()
+	t.test("SplineJoin: skew and same-facing endpoints remain connected", function()
 		local directions = { X_AXIS, -X_AXIS, Y_AXIS }
 		local size = vector.create(4, 2, 3)
 		local template = createPart(size)
 
 		for _, direction in directions do
 			local finish = vector.create(10, 10, 7)
-			local segments = assert(ArcJoin.plan(template, CFrame.identity, finish, direction, X_AXIS, 20))
+			local segments = assert(SplineJoin.plan(template, CFrame.identity, finish, direction, X_AXIS, 20))
 
 			checkPlan(segments, vector.zero, finish, X_AXIS, size)
 		end
 	end)
 
 	-- Padding and extension integration
-	t.test("ArcJoin: shared padding extends both ends and preserves clones", function()
+	t.test("SplineJoin: shared padding extends both ends and preserves clones", function()
 		withParts(function(folder, a, b, faceA, faceB)
-			local options = table.clone(Settings.DefaultArcJoinOptions)
+			local options = table.clone(Settings.DefaultSplineJoinOptions)
 			options.AutomaticSegments = false
 			options.Segments = 7
 			options.Padding = 2
-			doExtend(faceA, faceB, "ArcJoin", false, options)
+			doExtend(faceA, faceB, "SplineJoin", false, options)
 			t.expect(#folder:GetChildren()).toBe(8)
 			local aSize = CAST_VECTOR(a.Size)
 			local bSize = CAST_VECTOR(b.Size)
@@ -1423,14 +1423,14 @@ return function(t: TestContext)
 		end)
 	end)
 
-	t.test("ArcJoin: advanced padding extends each end independently", function()
+	t.test("SplineJoin: advanced padding extends each end independently", function()
 		withParts(function(folder, a, b, faceA, faceB)
-			local options = table.clone(Settings.DefaultArcJoinOptions)
+			local options = table.clone(Settings.DefaultSplineJoinOptions)
 			options.AdvancedPadding = true
 			options.Padding = 100
 			options.PaddingA = 1
 			options.PaddingB = 3
-			doExtend(faceA, faceB, "ArcJoin", false, options)
+			doExtend(faceA, faceB, "SplineJoin", false, options)
 			t.expect(CAST_VECTOR(a.Size).x > 5).toBe(true)
 			near(CAST_VECTOR(a.Size) * vector.create(0, 1, 1), vector.create(0, 2, 3))
 			near(CAST_VECTOR(b.Size), vector.create(2, 7, 3))
@@ -1438,17 +1438,17 @@ return function(t: TestContext)
 		end)
 	end)
 
-	t.test("ArcJoin: straight ends extend matching plain parts", function()
+	t.test("SplineJoin: straight ends extend matching plain parts", function()
 		local propertyMatches = { true, false }
 		for _, sameProperties in propertyMatches do
 			withParts(function(folder, a, b, faceA, faceB)
 				a:ClearAllChildren()
 				a:SetAttribute("ArcTemplate", nil)
 				b.Color = if sameProperties then a.Color else Color3.new(1, 0, 0)
-				local options = table.clone(Settings.DefaultArcJoinOptions)
+				local options = table.clone(Settings.DefaultSplineJoinOptions)
 				options.AutomaticSegments = false
 				options.Segments = 12
-				doExtend(faceA, faceB, "ArcJoin", false, options)
+				doExtend(faceA, faceB, "SplineJoin", false, options)
 				local aSize = CAST_VECTOR(a.Size)
 				local bSize = CAST_VECTOR(b.Size)
 				t.expect(aSize.x > 4).toBe(true)
@@ -1466,28 +1466,28 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("ArcJoin: invalid counts and excessive padding leave sources untouched", function()
+	t.test("SplineJoin: invalid counts and excessive padding leave sources untouched", function()
 		local segmentCounts = { 0, -1, 1.5, math.huge, 0 / 0 }
 		for _, count in segmentCounts do
 			withParts(function(folder, a, b, faceA, faceB)
-				local options = table.clone(Settings.DefaultArcJoinOptions)
+				local options = table.clone(Settings.DefaultSplineJoinOptions)
 				options.AutomaticSegments = false
 				options.Segments = count
 				options.Padding = 2
 				t.expect(function()
-					doExtend(faceA, faceB, "ArcJoin", false, options)
-				end).toThrow("Arc Join:")
+					doExtend(faceA, faceB, "SplineJoin", false, options)
+				end).toThrow("Spline Join:")
 				t.expect(#folder:GetChildren()).toBe(2)
 				near(CAST_VECTOR(a.Size), vector.create(4, 2, 3))
 				near(CAST_VECTOR(b.Size), vector.create(2, 4, 3))
 			end)
 		end
 		withParts(function(folder, a, b, faceA, faceB)
-			local options = table.clone(Settings.DefaultArcJoinOptions)
+			local options = table.clone(Settings.DefaultSplineJoinOptions)
 			options.Padding = 20
 			t.expect(function()
-				doExtend(faceA, faceB, "ArcJoin", false, options)
-			end).toThrow("Arc Join:")
+				doExtend(faceA, faceB, "SplineJoin", false, options)
+			end).toThrow("Spline Join:")
 			t.expect(#folder:GetChildren()).toBe(2)
 			near(CAST_VECTOR(a.Size), vector.create(4, 2, 3))
 			near(CAST_VECTOR(b.Size), vector.create(2, 4, 3))

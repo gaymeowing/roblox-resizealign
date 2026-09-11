@@ -22,7 +22,7 @@ local function makeTestSettings()
 		ResizeMode = "OuterTouch",
 		AcuteWedgeJoin = true,
 		UseCylinderForRoundedJoin = true,
-		ArcJoin = table.clone(require(script.Parent.Settings).DefaultArcJoinOptions),
+		SplineJoin = table.clone(require(script.Parent.Settings).DefaultSplineJoinOptions),
 		SelectionThreshold = "25",
 		ClassicUI = false,
 	}
@@ -81,22 +81,22 @@ end
 return function(t: TestContext)
 	t.test("Attached menus follow selection in both UI styles", function()
 		for _, classic in { false, true } do
-			for _, mode in { "ArcJoin", "OuterTouch", "InnerTouch", "RoundedJoin" } do
+			for _, mode in { "SplineJoin", "OuterTouch", "InnerTouch", "RoundedJoin" } do
 				renderGui({
 					ClassicUI = classic,
 					ResizeMode = mode,
 					HaveHelp = true,
 					Check = function(screen)
-						local arc = screen:FindFirstChild("ArcJoinOptions", true)
+						local spline = screen:FindFirstChild("SplineJoinOptions", true)
 						local outer = screen:FindFirstChild("OuterTouchOptions", true)
-						t.expect(arc ~= nil).toBe(mode == "ArcJoin")
+						t.expect(spline ~= nil).toBe(mode == "SplineJoin")
 						t.expect(outer ~= nil).toBe(mode == "OuterTouch")
 						local rounded = screen:FindFirstChild("RoundedJoinOptions", true)
-						local panel = arc or outer or rounded
+						local panel = spline or outer or rounded
 						if panel then
-							local row = screen:FindFirstChild(if arc then "ArcJoin" elseif rounded then "RoundedJoin" else "OuterTouch", true)
+							local row = screen:FindFirstChild(if spline then "SplineJoin" elseif rounded then "RoundedJoin" else "OuterTouch", true)
 							t.expect(row.LayoutOrder).toBe(
-								if arc then 7 elseif rounded then 5 else 1
+								if spline then 7 elseif rounded then 5 else 1
 							)
 							t.expect(panel.Position.X.Offset).toBe(if classic then 0 else 20)
 							local outline = row:FindFirstChild("Outline")
@@ -111,13 +111,13 @@ return function(t: TestContext)
 							t.expect(label.TextWrapped).toBe(true)
 							t.expect(label.AbsoluteSize.Y > 22).toBe(true)
 						end
-						if arc then
-							local preview = screen:FindFirstChild("ArcJoin", true):FindFirstChild("Filler", true)
+						if spline then
+							local preview = screen:FindFirstChild("SplineJoin", true):FindFirstChild("Filler", true)
 							t.expect(preview:IsA("Model")).toBe(true)
 							t.expect(preview:FindFirstChildWhichIsA("BasePart") ~= nil).toBe(true)
-							t.expect(arc.Content:FindFirstChild("Segments") == nil).toBe(true)
+							t.expect(spline.Content:FindFirstChild("Segments") == nil).toBe(true)
 							t.expect(panel.BackgroundColor3).toBe(Color3.fromRGB(18, 18, 18))
-							local textbox = arc.Content.Padding:FindFirstChild("TextBox", true)
+							local textbox = spline.Content.Padding:FindFirstChild("TextBox", true)
 							t.expect(textbox.Text:find("studs", 1, true) ~= nil).toBe(true)
 						end
 					end,
@@ -126,15 +126,15 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("Arc menu opens with the same outline and height as reselection", function()
+	t.test("Spline menu opens with the same outline and height as reselection", function()
 		for _, classic in { false, true } do
 			renderGui({
 				ClassicUI = classic,
-				ResizeMode = "ArcJoin",
+				ResizeMode = "SplineJoin",
 				HaveHelp = true,
 				Check = function(screen, settings, render)
-					local panel = screen:FindFirstChild("ArcJoinOptions", true)
-					local header = screen:FindFirstChild("ArcJoin", true)
+					local panel = screen:FindFirstChild("SplineJoinOptions", true)
+					local header = screen:FindFirstChild("SplineJoin", true)
 					local height = panel.AbsoluteSize.Y
 					t.expect(height > 0).toBe(true)
 					if not classic then
@@ -143,18 +143,18 @@ return function(t: TestContext)
 					end
 					settings.ResizeMode = "InnerTouch"
 					render()
-					settings.ResizeMode = "ArcJoin"
+					settings.ResizeMode = "SplineJoin"
 					render()
-					panel = screen:FindFirstChild("ArcJoinOptions", true)
-					header = screen:FindFirstChild("ArcJoin", true)
+					panel = screen:FindFirstChild("SplineJoinOptions", true)
+					header = screen:FindFirstChild("SplineJoin", true)
 					t.expect(panel.AbsoluteSize.Y).toBe(height)
 					if not classic then
 						t.expect(header.Outline.AbsolutePosition.Y).toBe(header.AbsolutePosition.Y)
 					end
-					settings.ArcJoin.AdvancedPadding = true
+					settings.SplineJoin.AdvancedPadding = true
 					render()
 					t.expect(panel.AbsoluteSize.Y).toBe(height)
-					settings.ArcJoin.AutomaticSegments = false
+					settings.SplineJoin.AutomaticSegments = false
 					render()
 					t.expect(panel.AbsoluteSize.Y > height).toBe(true)
 					local content = panel.Content
@@ -326,7 +326,7 @@ return function(t: TestContext)
 			"InnerTouch",
 			"WedgeJoin",
 			"RoundedJoin",
-			"ArcJoin",
+			"SplineJoin",
 			"ButtJoint",
 			"ExtendUpTo",
 			"ExtendInto",

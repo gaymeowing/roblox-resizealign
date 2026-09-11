@@ -5,7 +5,7 @@ local React = require(Packages.React)
 
 local Colors = require("./PluginGui/Colors")
 local Settings = require("./Settings")
-local ArcJoin = require("./ArcJoin")
+local SplineJoin = require("./SplineJoin")
 local ShapeUtils = require("./ShapeUtils")
 
 local e = React.createElement
@@ -340,7 +340,7 @@ local function buildRoundedDemo()
 	local pointA = getFaceBasis(fA.cf, fA.size, fA.face) + normalA * deltaA
 	local pointB = getFaceBasis(fB.cf, fB.size, fB.face) + normalB * deltaB
 	local start = CFrame.new(pointA) * fA.cf.Rotation
-	local finish = ArcJoin.getTargetPoint(
+	local finish = SplineJoin.getTargetPoint(
 		start,
 		CFrame.new(pointB) * fB.cf.Rotation,
 		fA.size,
@@ -351,7 +351,7 @@ local function buildRoundedDemo()
 	local template = Instance.new("Part")
 	template.Size = fA.size
 	fillerData = {
-		segments = ArcJoin.plan(template, start, finish, normalB, Vector3.fromNormalId(fA.face), 6),
+		segments = SplineJoin.plan(template, start, finish, normalB, Vector3.fromNormalId(fA.face), 6),
 	}
 	template:Destroy()
 	return {
@@ -365,7 +365,7 @@ local function buildRoundedDemo()
 end
 
 -- Scene data, including the planned green parts, is built once at module load.
-local function buildArcDemo()
+local function buildSplineDemo()
 	local start = Vector3.new(-0.7, -0.2, 0)
 	local finish = Vector3.new(0.8, 0.6, 0)
 	local direction = Vector3.new(1, 1, 0).Unit
@@ -380,7 +380,7 @@ local function buildArcDemo()
 		partBStart = { CFrame = CFrame.new(finish + direction * 1.65) * rotation, Size = Vector3.new(1.9, 1, 0.8) },
 		partBEnd = { CFrame = CFrame.new(finish + direction * 1.3) * rotation, Size = Vector3.new(2.6, 1, 0.8) },
 		filler = {
-			segments = ArcJoin.plan(template, CFrame.new(start), finish, -direction, Vector3.xAxis, 24),
+			segments = SplineJoin.plan(template, CFrame.new(start), finish, -direction, Vector3.xAxis, 24),
 		},
 	}
 	template:Destroy()
@@ -395,7 +395,7 @@ local DEMO_DATA: { [PreviewMode]: any } = {
 	WedgeJoin = buildDemo(ANG_A, ANG_B, ANG_CAM, "WedgeJoin"),
 	RoundedJoin = buildRoundedDemo(),
 	RoundedJoinCylinder = buildDemo(ANG_A, ANG_B, ANG_CAM, "RoundedJoin"),
-	ArcJoin = buildArcDemo(),
+	SplineJoin = buildSplineDemo(),
 	ButtJoint = buildDemo(RT_A, RT_B, RT_CAM, "ButtJoint"),
 	ExtendUpTo = buildDemo(ANG_A, ANG_B, ANG_CAM, "ExtendUpTo"),
 	ExtendInto = buildDemo(ANG_A, ANG_B, ANG_CAM, "ExtendInto"),

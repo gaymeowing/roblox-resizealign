@@ -12,7 +12,7 @@ local JointMaker = require(DraggerFramework.Utility.JointMaker)
 local copyPartProps = require(Src.copyPartProps)
 local Settings = require(Src.Settings)
 local ShapeUtils = require(Src.ShapeUtils)
-local ArcJoin = require(Src.ArcJoin)
+local SplineJoin = require(Src.SplineJoin)
 
 local otherNormals = ShapeUtils.otherNormals
 local isWedgeShape = ShapeUtils.isWedgeShape
@@ -348,7 +348,7 @@ end
 
 -- Slopes use the same rectangular/triangular extrusion profiles as resizePart.
 -- Their selected normal is not one of the original part's cardinal axes.
-local function getArcFace(face: Face): (CFrame, Vector3, Vector3, ("Part" | "WedgePart")?)
+local function getSplineFace(face: Face): (CFrame, Vector3, Vector3, ("Part" | "WedgePart")?)
 	local part = face.Object
 	local cf = part.CFrame
 	local size = part.Size
@@ -376,12 +376,12 @@ local function getArcFace(face: Face): (CFrame, Vector3, Vector3, ("Part" | "Wed
 	return CFrame.new(point) * cf.Rotation, size, Vector3.fromNormalId(face.Normal), nil
 end
 
-local ARC_EXTENSION_IGNORED_PROPERTIES = { "CFrame", "Position", "Orientation", "Rotation", "Size" }
+local SPLINE_EXTENSION_IGNORED_PROPERTIES = { "CFrame", "Position", "Orientation", "Rotation", "Size" }
 
-local function getArcExtension(template: BasePart, face: Face, candidate: BasePart): number?
+local function getSplineExtension(template: BasePart, face: Face, candidate: BasePart): number?
 	local part = face.Object
 
-	if not areInstancesSame(template, part, ARC_EXTENSION_IGNORED_PROPERTIES) then
+	if not areInstancesSame(template, part, SPLINE_EXTENSION_IGNORED_PROPERTIES) then
 		return nil
 	end
 
@@ -407,7 +407,7 @@ local function getArcExtension(template: BasePart, face: Face, candidate: BasePa
 	return if length >= 0.001 and length <= 2048 then extension else nil
 end
 
-local function createArcJoin(
+local function createSplineJoin(
 	faceA: Face,
 	faceB: Face,
 	paddingA: number,
@@ -416,18 +416,18 @@ local function createArcJoin(
 	allowShrink: boolean?
 )
 	if (not allowShrink) and (paddingA < 0 or paddingB < 0) then
-		error("Arc Join: padding must be a non-negative number.")
+		error("Spline Join: padding must be a non-negative number.")
 	end
 
-	local frameA, profileA, localNormalA, extrusionClass = getArcFace(faceA)
-	local frameB, profileB, localNormalB = getArcFace(faceB)
+	local frameA, profileA, localNormalA, extrusionClass = getSplineFace(faceA)
+	local frameB, profileB, localNormalB = getSplineFace(faceB)
 	local pointA = frameA.Position
 	local pointB = frameB.Position
 	local normalA = frameA:VectorToWorldSpace(localNormalA)
 	local normalB = frameB:VectorToWorldSpace(localNormalB)
 	local startPoint = pointA + normalA * paddingA
 	local startFrame = CFrame.new(startPoint) * frameA.Rotation
-	local endPoint, surfaceOffset, targetRotation = ArcJoin.getTargetPoint(
+	local endPoint, surfaceOffset, targetRotation = SplineJoin.getTargetPoint(
 		startFrame,
 		CFrame.new(pointB + normalB * paddingB) * frameB.Rotation,
 		profileA,
@@ -437,14 +437,14 @@ local function createArcJoin(
 	)
 
 	if not allowShrink and vector.dot(endPoint - startPoint, pointB - pointA) <= 0 then
-		error("Arc Join: padding leaves no room for the arc.")
+		error("Spline Join: padding leaves no room for the spline.")
 	end
 
 	local sizeA = faceA.Object.Size + getDimension(faceA) * paddingA
 	local sizeB = faceB.Object.Size + getDimension(faceB) * paddingB
 
 	if math.max(sizeA.X, sizeA.Y, sizeA.Z, sizeB.X, sizeB.Y, sizeB.Z) > 2048 then
-		error("Arc Join: padding exceeds the maximum part size.")
+		error("Spline Join: padding exceeds the maximum part size.")
 	end
 
 	local temporaryTemplate: BasePart?
@@ -459,7 +459,7 @@ local function createArcJoin(
 		temporaryTemplate = extrusion
 	end
 
-	local parts = ArcJoin.plan(
+	local parts = SplineJoin.plan(
 		template,
 		startFrame,
 		endPoint,
@@ -475,12 +475,12 @@ local function createArcJoin(
 	end
 
 	if not parts then
-		error("Arc Join: the segment count or resulting segment sizes cannot form a join.")
+		error("Spline Join: the segment count or resulting segment sizes cannot form a join.")
 	end
 
 	local first = 1
 	local last = #parts
-	local extensionA = getArcExtension(faceA.Object, faceA, parts[first])
+	local extensionA = getSplineExtension(faceA.Object, faceA, parts[first])
 
 	if extensionA then
 		paddingA = extensionA
@@ -489,7 +489,7 @@ local function createArcJoin(
 	end
 
 	if first <= last then
-		local extensionB = getArcExtension(faceA.Object, faceB, parts[last])
+		local extensionB = getSplineExtension(faceA.Object, faceB, parts[last])
 
 		if extensionB then
 			paddingB = extensionB
@@ -522,12 +522,12 @@ local function doExtend(
 	faceB: Face,
 	resizeMode: ResizeMode,
 	acuteWedgeJoin: boolean?,
-	arcOptions: Settings.ArcJoinOptions?,
+	splineOptions: Settings.SplineJoinOptions?,
 	useCylinderForRoundedJoin: boolean?
 )
-	if resizeMode == "ArcJoin" then
-		local options = arcOptions or Settings.DefaultArcJoinOptions
-		createArcJoin(
+	if resizeMode == "SplineJoin" then
+		local options = splineOptions or Settings.DefaultSplineJoinOptions
+		createSplineJoin(
 			faceA,
 			faceB,
 			if options.AdvancedPadding then options.PaddingA else options.Padding,
@@ -732,7 +732,7 @@ local function doExtend(
 		if paddingA <= -extendableA + 0.001 or paddingB <= -extendableB + 0.001 then
 			return
 		end
-		createArcJoin(faceA, faceB, paddingA, paddingB, nil, true)
+		createSplineJoin(faceA, faceB, paddingA, paddingB, nil, true)
 		return
 	end
 

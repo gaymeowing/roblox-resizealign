@@ -4,8 +4,8 @@ local kSettingsKey = "resizeAlignState"
 
 local PluginGuiTypes = require("./PluginGui/Types")
 
-export type ResizeMode = "OuterTouch" | "InnerTouch" | "WedgeJoin" | "RoundedJoin" | "ArcJoin" | "ButtJoint" | "ExtendUpTo" | "ExtendInto"
-export type ArcJoinOptions = {
+export type ResizeMode = "OuterTouch" | "InnerTouch" | "WedgeJoin" | "RoundedJoin" | "SplineJoin" | "ButtJoint" | "ExtendUpTo" | "ExtendInto"
+export type SplineJoinOptions = {
 	AutomaticSegments: boolean,
 	Segments: number,
 	Padding: number,
@@ -14,7 +14,7 @@ export type ArcJoinOptions = {
 	PaddingB: number,
 }
 
-local DEFAULT_ARC_JOIN_OPTIONS: ArcJoinOptions = {
+local DEFAULT_SPLINE_JOIN_OPTIONS: SplineJoinOptions = {
 	AutomaticSegments = true,
 	Segments = 12,
 	Padding = 0,
@@ -29,17 +29,17 @@ export type ResizeAlignSettings = PluginGuiTypes.PluginGuiSettings & {
 	ResizeMode: ResizeMode,
 	AcuteWedgeJoin: boolean,
 	UseCylinderForRoundedJoin: boolean,
-	ArcJoin: ArcJoinOptions,
+	SplineJoin: SplineJoinOptions,
 	SelectionThreshold: SelectionThreshold,
 	ClassicUI: boolean,
 }
 
 local function loadSettings(plugin: Plugin): ResizeAlignSettings
 	local raw = plugin:GetSetting(kSettingsKey) or {}
-	local arcJoin = raw.ArcJoin or {}
-	for key, default in DEFAULT_ARC_JOIN_OPTIONS do
-		if arcJoin[key] == nil then
-			arcJoin[key] = default
+	local splineJoin = raw.SplineJoin or raw.ArcJoin or {}
+	for key, default in DEFAULT_SPLINE_JOIN_OPTIONS do
+		if splineJoin[key] == nil then
+			splineJoin[key] = default
 		end
 	end
 	return {
@@ -57,8 +57,11 @@ local function loadSettings(plugin: Plugin): ResizeAlignSettings
 
 		----
 
-		ArcJoin = arcJoin,
-		ResizeMode = if raw.ResizeMode ~= nil then raw.ResizeMode else "OuterTouch",
+		SplineJoin = splineJoin,
+		ResizeMode = if raw.ResizeMode == "ArcJoin"
+			then "SplineJoin"
+			elseif raw.ResizeMode ~= nil then raw.ResizeMode
+			else "OuterTouch",
 		UseCylinderForRoundedJoin = if raw.UseCylinderForRoundedJoin ~= nil then raw.UseCylinderForRoundedJoin else true,
 		AcuteWedgeJoin = if raw.AcuteWedgeJoin ~= nil then raw.AcuteWedgeJoin else true,
 		SelectionThreshold = if raw.SelectionThreshold ~= nil then raw.SelectionThreshold else "25",
@@ -78,7 +81,7 @@ local function saveSettings(plugin: Plugin, settings: ResizeAlignSettings)
 		----
 
 		ResizeMode = settings.ResizeMode,
-		ArcJoin = settings.ArcJoin,
+		SplineJoin = settings.SplineJoin,
 		AcuteWedgeJoin = settings.AcuteWedgeJoin,
 		UseCylinderForRoundedJoin = settings.UseCylinderForRoundedJoin,
 		SelectionThreshold = settings.SelectionThreshold,
@@ -87,7 +90,7 @@ local function saveSettings(plugin: Plugin, settings: ResizeAlignSettings)
 end
 
 return {
-	DefaultArcJoinOptions = DEFAULT_ARC_JOIN_OPTIONS,
+	DefaultSplineJoinOptions = DEFAULT_SPLINE_JOIN_OPTIONS,
 	Load = loadSettings,
 	Save = saveSettings,
 }

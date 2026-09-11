@@ -13,12 +13,12 @@ return function(t: TestContext)
 		t.expect(settings.WindowAnchor ~= nil).toBe(true)
 	end)
 
-	t.test("ArcJoin options default and round-trip independently", function()
+	t.test("SplineJoin options default and round-trip independently", function()
 		local settings = Settings.Load(t.plugin)
-		local saved = table.clone(settings.ArcJoin)
-		t.expect(settings.ArcJoin.AutomaticSegments).toBe(true)
-		t.expect(settings.ArcJoin.Padding).toBe(0)
-		settings.ArcJoin = {
+		local saved = table.clone(settings.SplineJoin)
+		t.expect(settings.SplineJoin.AutomaticSegments).toBe(true)
+		t.expect(settings.SplineJoin.Padding).toBe(0)
+		settings.SplineJoin = {
 			AutomaticSegments = false,
 			Segments = 24,
 			Padding = 0.5,
@@ -28,11 +28,32 @@ return function(t: TestContext)
 		}
 		Settings.Save(t.plugin, settings)
 		local reloaded = Settings.Load(t.plugin)
-		t.expect(reloaded.ArcJoin).toEqual(settings.ArcJoin)
-		reloaded.ArcJoin.Padding = 3
-		t.expect(settings.ArcJoin.Padding).toBe(0.5)
-		settings.ArcJoin = saved
+		t.expect(reloaded.SplineJoin).toEqual(settings.SplineJoin)
+		reloaded.SplineJoin.Padding = 3
+		t.expect(settings.SplineJoin.Padding).toBe(0.5)
+		settings.SplineJoin = saved
 		Settings.Save(t.plugin, settings)
+	end)
+
+	t.test("SplineJoin migrates saved ArcJoin settings", function()
+		local previous = Settings.Load(t.plugin)
+		t.plugin:SetSetting("resizeAlignState", {
+			ResizeMode = "ArcJoin",
+			ArcJoin = {
+				AutomaticSegments = false,
+				Segments = 24,
+				Padding = 0.5,
+				AdvancedPadding = true,
+				PaddingA = 1,
+				PaddingB = 2,
+			},
+		})
+		local settings = Settings.Load(t.plugin)
+		t.expect(settings.ResizeMode).toBe("SplineJoin")
+		t.expect(settings.SplineJoin.AutomaticSegments).toBe(false)
+		t.expect(settings.SplineJoin.Segments).toBe(24)
+		t.expect(settings.SplineJoin.Padding).toBe(0.5)
+		Settings.Save(t.plugin, previous)
 	end)
 
 	t.test("Save and Load round-trips", function()
@@ -93,7 +114,7 @@ return function(t: TestContext)
 			"InnerTouch",
 			"WedgeJoin",
 			"RoundedJoin",
-			"ArcJoin",
+			"SplineJoin",
 			"ButtJoint",
 			"ExtendUpTo",
 			"ExtendInto",

@@ -196,8 +196,8 @@ local function OptionEntry(props: {
 	})
 end
 
-local function ArcJoinOptions(props: {
-	Options: Settings.ArcJoinOptions,
+local function SplineJoinOptions(props: {
+	Options: Settings.SplineJoinOptions,
 	UpdatedSettings: () -> (),
 })
 	local options = props.Options
@@ -247,7 +247,7 @@ local function ArcJoinOptions(props: {
 	return React.createElement(React.Fragment, nil, {
 		AutomaticSegments = e(OptionEntry, {
 			LayoutOrder = 1,
-			HelpText = "Choose the number of clones automatically from the arc length and curvature. Turn this off to enter a segment count.",
+			HelpText = "Choose the number of clones automatically from the spline length and curvature. Turn this off to enter a segment count.",
 			Content = e(Checkbox, {
 				Label = "Automatic segments",
 				Checked = options.AutomaticSegments,
@@ -259,7 +259,7 @@ local function ArcJoinOptions(props: {
 		}),
 		Segments = not options.AutomaticSegments and e(OptionEntry, {
 			LayoutOrder = 2,
-			HelpText = "Number of clones making up the arc. More segments produce a smoother curve.",
+			HelpText = "Number of clones making up the spline. More segments produce a smoother curve.",
 			Content = e(NumberInput, {
 				Label = "Segments",
 				Value = options.Segments,
@@ -288,7 +288,7 @@ local function ArcJoinOptions(props: {
 		}),
 		Padding = e(OptionEntry, {
 			LayoutOrder = 4,
-			HelpText = "Extend the selected parts by this amount before creating the arc. Padding reduces the space the arc spans; zero adds no padding.",
+			HelpText = "Extend the selected parts by this amount before creating the spline. Padding reduces the space the spline spans; zero adds no padding.",
 			Content = e("Frame", {
 				Size = UDim2.new(1, 0, 0, 42),
 				BackgroundTransparency = 1,
@@ -331,7 +331,7 @@ local function RoundedJoinOptions(props: {
 })
 	return React.createElement(React.Fragment, nil, {
 		UseCylinderForRoundedJoin = e(OptionEntry, {
-			HelpText = "Uses a Cylinder part for joining both parts, rather than using an Arc Join.",
+			HelpText = "Uses a Cylinder part for joining both parts, rather than using a Spline Join.",
 			Content = e(Checkbox, {
 				Label = "Use Cylinder For Join",
 				Checked = props.Settings.UseCylinderForRoundedJoin,
@@ -434,13 +434,13 @@ local function ResizeMethodPanel(props: {
 				UpdatedSettings = props.UpdatedSettings,
 			})
 		),
-		ArcJoin = makeExpandableButton(
-			"Arc Join",
-			"ArcJoin",
-			"Connect the selected faces with an arc of clones of the first part. Segments are automatic by default. Padding extends each selected end before the arc begins.",
+		SplineJoin = makeExpandableButton(
+			"Spline Join",
+			"SplineJoin",
+			"Connect the selected faces with a spline of clones of the first part. Segments are automatic by default. Padding extends each selected end before the spline begins.",
 			7,
-			e(ArcJoinOptions, {
-				Options = props.Settings.ArcJoin,
+			e(SplineJoinOptions, {
+				Options = props.Settings.SplineJoin,
 				UpdatedSettings = props.UpdatedSettings,
 			})
 		),
@@ -666,7 +666,7 @@ local function ClassicResizeMethodPanel(props: {
 			SubText = subText,
 			IsCurrent = current == mode,
 			Icon = RESIZE_MODE_ICONS[mode],
-			PreviewMode = if mode == "ArcJoin" then mode else nil,
+			PreviewMode = if mode == "SplineJoin" then mode else nil,
 			LayoutOrder = layoutOrder,
 			OnClick = function()
 				props.Settings.ResizeMode = mode
@@ -691,7 +691,7 @@ local function ClassicResizeMethodPanel(props: {
 				SubText = subText,
 				IsCurrent = isCurrent,
 				Icon = RESIZE_MODE_ICONS[mode],
-				PreviewMode = if mode == "ArcJoin" then mode else nil,
+				PreviewMode = if mode == "SplineJoin" then mode else nil,
 				OpenBelow = content ~= nil,
 				OnClick = function()
 					props.Settings.ResizeMode = mode
@@ -729,13 +729,13 @@ local function ClassicResizeMethodPanel(props: {
 				UpdatedSettings = props.UpdatedSettings,
 			})
 		),
-		ArcJoin = makeExpandableButton(
-			"ArcJoin",
-			"Arc Join",
-			"connect with an arc of clones",
+		SplineJoin = makeExpandableButton(
+			"SplineJoin",
+			"Spline Join",
+			"connect with a spline of clones",
 			5,
-			e(ArcJoinOptions, {
-				Options = props.Settings.ArcJoin,
+			e(SplineJoinOptions, {
+				Options = props.Settings.SplineJoin,
 				UpdatedSettings = props.UpdatedSettings,
 			})
 		),
