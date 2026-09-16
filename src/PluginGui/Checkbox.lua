@@ -40,7 +40,7 @@ local function Checkbox(props: {
 		}),
 		Label = e("TextButton", {
 			Size = UDim2.fromOffset(0, HEIGHT),
-			AutomaticSize = Enum.AutomaticSize.Y,
+			AutomaticSize = Enum.AutomaticSize.XY,
 			TextWrapped = true,
 			Text = props.Label,
 			TextColor3 = Colors.WHITE,
