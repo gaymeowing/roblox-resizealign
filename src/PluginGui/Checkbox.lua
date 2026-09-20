@@ -60,8 +60,12 @@ local function Checkbox(props: {
 				setLabelHovered(false)
 			end,
 		}, {
+			-- Shrink as well as grow so that a long label wraps instead of
+			-- pushing the checkbox out of a narrow container
 			Flex = e("UIFlexItem", {
-				FlexMode = Enum.UIFlexMode.Grow,
+				FlexMode = Enum.UIFlexMode.Custom,
+				GrowRatio = 1,
+				ShrinkRatio = 1,
 			}),
 		}),
 		CheckBox = e("TextButton", {

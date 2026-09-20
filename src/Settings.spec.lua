@@ -4,34 +4,48 @@ type TestContext = TestTypes.TestContext
 local Settings = require(script.Parent.Settings)
 
 return function(t: TestContext)
+	-- Run with nothing saved so that defaults don't depend on what earlier
+	-- runs left behind in the test plugin's settings
+	local function withoutSavedSettings(body: () -> ())
+		local previous = t.plugin:GetSetting("resizeAlignState")
+		t.plugin:SetSetting("resizeAlignState", nil)
+		local ok, err = pcall(body)
+		t.plugin:SetSetting("resizeAlignState", previous)
+		assert(ok, err)
+	end
+
 	t.test("Load returns valid settings with defaults", function()
-		local settings = Settings.Load(t.plugin)
-		t.expect(settings.ResizeMode).toBe("OuterTouch")
-		t.expect(settings.SelectionThreshold).toBe("25")
-		t.expect(settings.ClassicUI).toBe(false)
-		t.expect(settings.WindowPosition ~= nil).toBe(true)
-		t.expect(settings.WindowAnchor ~= nil).toBe(true)
+		withoutSavedSettings(function()
+			local settings = Settings.Load(t.plugin)
+			t.expect(settings.ResizeMode).toBe("OuterTouch")
+			t.expect(settings.SelectionThreshold).toBe("25")
+			t.expect(settings.ClassicUI).toBe(false)
+			t.expect(settings.WindowPosition ~= nil).toBe(true)
+			t.expect(settings.WindowAnchor ~= nil).toBe(true)
+		end)
 	end)
 
 	t.test("SplineJoin options default and round-trip independently", function()
-		local settings = Settings.Load(t.plugin)
-		local saved = table.clone(settings.SplineJoin)
-		t.expect(settings.SplineJoin.Segments).toBe(0)
-		t.expect(settings.SplineJoin.Padding).toBe(0)
-		settings.SplineJoin = {
-			Segments = 24,
-			Padding = 0.5,
-			AdvancedPadding = true,
-			PaddingA = 1,
-			PaddingB = 2,
-		}
-		Settings.Save(t.plugin, settings)
-		local reloaded = Settings.Load(t.plugin)
-		t.expect(reloaded.SplineJoin).toEqual(settings.SplineJoin)
-		reloaded.SplineJoin.Padding = 3
-		t.expect(settings.SplineJoin.Padding).toBe(0.5)
-		settings.SplineJoin = saved
-		Settings.Save(t.plugin, settings)
+		withoutSavedSettings(function()
+			local settings = Settings.Load(t.plugin)
+			local saved = table.clone(settings.SplineJoin)
+			t.expect(settings.SplineJoin.Segments).toBe(0)
+			t.expect(settings.SplineJoin.Padding).toBe(0)
+			settings.SplineJoin = {
+				Segments = 24,
+				Padding = 0.5,
+				AdvancedPadding = true,
+				PaddingA = 1,
+				PaddingB = 2,
+			}
+			Settings.Save(t.plugin, settings)
+			local reloaded = Settings.Load(t.plugin)
+			t.expect(reloaded.SplineJoin).toEqual(settings.SplineJoin)
+			reloaded.SplineJoin.Padding = 3
+			t.expect(settings.SplineJoin.Padding).toBe(0.5)
+			settings.SplineJoin = saved
+			Settings.Save(t.plugin, settings)
+		end)
 	end)
 
 	t.test("SplineJoin migrates saved ArcJoin settings", function()
@@ -111,14 +125,16 @@ return function(t: TestContext)
 		Settings.Save(t.plugin, settings)
 	end)
 
-	t.test("RoundedJoin cylinder defaults off and round-trips", function()
-		local settings = Settings.Load(t.plugin)
-		t.expect(settings.UseCylinderForRoundedJoin).toBe(false)
-		settings.UseCylinderForRoundedJoin = true
-		Settings.Save(t.plugin, settings)
-		t.expect(Settings.Load(t.plugin).UseCylinderForRoundedJoin).toBe(true)
-		settings.UseCylinderForRoundedJoin = false
-		Settings.Save(t.plugin, settings)
+	t.test("RoundedJoin cylinder defaults on and round-trips", function()
+		withoutSavedSettings(function()
+			local settings = Settings.Load(t.plugin)
+			t.expect(settings.UseCylinderForRoundedJoin).toBe(true)
+			settings.UseCylinderForRoundedJoin = false
+			Settings.Save(t.plugin, settings)
+			t.expect(Settings.Load(t.plugin).UseCylinderForRoundedJoin).toBe(false)
+			settings.UseCylinderForRoundedJoin = true
+			Settings.Save(t.plugin, settings)
+		end)
 	end)
 
 	t.test("All resize modes round-trip", function()

@@ -96,7 +96,8 @@ return function(t: TestContext)
 						if panel then
 							local row = screen:FindFirstChild(if spline then "SplineJoin" elseif rounded then "RoundedJoin" else "OuterTouch", true)
 							t.expect(row.LayoutOrder).toBe(
-								if spline then 7 elseif rounded then 5 else 1
+								-- The classic UI has no Wedge Join row
+								if spline then (if classic then 5 else 7) elseif rounded then (if classic then 4 else 5) else 1
 							)
 							t.expect(panel.Position.X.Offset).toBe(if classic then 0 else 20)
 							local outline = row:FindFirstChild("Outline")
@@ -163,7 +164,7 @@ return function(t: TestContext)
 					local segments = content.Segments
 					local segmentLabel = segments:FindFirstChild("Label", true)
 					local segmentTextBox = segments:FindFirstChild("TextBox", true)
-					local secondTextBox = content.Padding.Second.Input.TextBox
+					local secondTextBox = content.Padding:FindFirstChild("Second", true).Input.TextBox
 					t.expect(segmentLabel.TextXAlignment).toBe(Enum.TextXAlignment.Left)
 					t.expect(segmentTextBox.AbsoluteSize.X).toBe(secondTextBox.AbsoluteSize.X)
 					t.expect(segmentTextBox.AbsolutePosition.X).toBe(secondTextBox.AbsolutePosition.X)
@@ -203,8 +204,9 @@ return function(t: TestContext)
 						render()
 						local row = screen:FindFirstChild("RoundedJoin", true)
 						if classic then
-							t.expect(row.Icon:IsA("ImageLabel")).toBe(true)
-							t.expect(row.Icon.Image).toBe("rbxassetid://9834555074")
+							local icon = row:FindFirstChild("Icon", true)
+							t.expect(icon:IsA("ImageLabel")).toBe(true)
+							t.expect(icon.Image).toBe("rbxassetid://9834555074")
 							continue
 						end
 						local filler = row:FindFirstChild("Filler", true)
