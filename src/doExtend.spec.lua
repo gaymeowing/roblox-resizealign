@@ -612,7 +612,7 @@ return function(t: TestContext)
 	-- RoundedJoin
 	--------------------------------------------------------------------------------
 
-	t.test("RoundedJoin: creates arc clones", function()
+	t.test("RoundedJoin: creates a filler part", function()
 		local partA = makePart(CFrame.new(-3, 0, 0), Vector3.new(2, 2, 2))
 		local partB = makePart(CFrame.new(2, 2, 0) * CFrame.Angles(0, 0, math.rad(45)), Vector3.new(2, 2, 2))
 		local faceA = makeFace(partA, Enum.NormalId.Right)
@@ -1144,7 +1144,7 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("RoundedJoin: block parts produce arc clones", function()
+	t.test("RoundedJoin: non-cylinder parts produce filler", function()
 		local partA = makePart(CFrame.new(-3, 0, 0), Vector3.new(2, 2, 2))
 		local partB = makePart(CFrame.new(2, 2, 0) * CFrame.Angles(0, 0, math.rad(45)), Vector3.new(2, 2, 2))
 		local faceA = makeFace(partA, Enum.NormalId.Right)

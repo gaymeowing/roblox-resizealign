@@ -852,7 +852,7 @@ return function(t: TestContext)
 				local ignoredOptions = table.clone(Settings.DefaultSplineJoinOptions)
 				ignoredOptions.Segments = 1
 				ignoredOptions.Padding = 100
-				doExtend(faceA, faceB, "RoundedJoin", false, ignoredOptions)
+				doExtend(faceA, faceB, "RoundedJoin", false, ignoredOptions, false)
 				local radius = thickness / 2
 				t.expect(CAST_VECTOR(a.Size).x >= 14 - radius).toBe(true)
 				near(CAST_VECTOR(a.Size) * vector.create(0, 1, 1), vector.create(0, thickness, 3))
@@ -877,20 +877,24 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("RoundedJoin: cylinder option restores the original filler and endpoints", function()
-		withParts(function(folder, a, b, faceA, faceB)
-			doExtend(faceA, faceB, "RoundedJoin", false, nil, true)
-			near(CAST_VECTOR(a.Size), vector.create(14, 2, 3))
-			near(CAST_VECTOR(b.Size), vector.create(2, 14, 3))
-			t.expect(#folder:GetChildren()).toBe(3)
-			for _, part in folder:GetChildren() do
-				if part ~= a and part ~= b then
-					t.expect(part.Shape).toBe(Enum.PartType.Cylinder)
-					near(CAST_VECTOR(part.Position), vector.create(10, 0, 0))
-					near(CAST_VECTOR(part.Size), vector.create(3, 2, 2))
+	t.test("RoundedJoin: cylinder option, the default, restores the original filler and endpoints", function()
+		-- An omitted option must behave the same as an explicit Cylinder
+		local optionArguments: { { boolean } } = { { true }, {} }
+		for _, arguments in optionArguments do
+			withParts(function(folder, a, b, faceA, faceB)
+				doExtend(faceA, faceB, "RoundedJoin", false, nil, arguments[1])
+				near(CAST_VECTOR(a.Size), vector.create(14, 2, 3))
+				near(CAST_VECTOR(b.Size), vector.create(2, 14, 3))
+				t.expect(#folder:GetChildren()).toBe(3)
+				for _, part in folder:GetChildren() do
+					if part ~= a and part ~= b then
+						t.expect(part.Shape).toBe(Enum.PartType.Cylinder)
+						near(CAST_VECTOR(part.Position), vector.create(10, 0, 0))
+						near(CAST_VECTOR(part.Size), vector.create(3, 2, 2))
+					end
 				end
-			end
-		end)
+			end)
+		end
 	end)
 
 	-- Planner geometry
