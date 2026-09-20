@@ -897,6 +897,52 @@ return function(t: TestContext)
 		end
 	end)
 
+	t.test("RoundedJoin: radius widens the cylinder filler without moving the endpoints", function()
+		-- Below the automatic radius of 1 the filler would not cover the gap
+		local cases = { { Radius = 2.5, Expected = 2.5 }, { Radius = 0.5, Expected = 1 } }
+		for _, case in cases do
+			withParts(function(folder, a, b, faceA, faceB)
+				doExtend(faceA, faceB, "RoundedJoin", false, nil, true, case.Radius)
+				near(CAST_VECTOR(a.Size), vector.create(14, 2, 3))
+				near(CAST_VECTOR(b.Size), vector.create(2, 14, 3))
+				t.expect(#folder:GetChildren()).toBe(3)
+				for _, part in folder:GetChildren() do
+					if part ~= a and part ~= b then
+						t.expect(part.Shape).toBe(Enum.PartType.Cylinder)
+						near(CAST_VECTOR(part.Position), vector.create(10, 0, 0))
+						near(CAST_VECTOR(part.Size), vector.create(3, 2 * case.Expected, 2 * case.Expected))
+					end
+				end
+			end)
+		end
+	end)
+
+	t.test("RoundedJoin: radius sets the spline filler's bend radius", function()
+		local cases = { { Radius = 5, Expected = 5 }, { Radius = 0.5, Expected = 1 } }
+		for _, case in cases do
+			withParts(function(folder, a, b, faceA, faceB)
+				doExtend(faceA, faceB, "RoundedJoin", false, nil, false, case.Radius)
+				local radius = case.Expected
+				t.expect(CAST_VECTOR(a.Size).x >= 14 - radius).toBe(true)
+				near(CAST_VECTOR(b.Size), vector.create(2, 14 - radius, 3))
+				local segments = { { CFrame = a.CFrame, Size = CAST_VECTOR(a.Size) } }
+				for _, part in folder:GetChildren() do
+					if part ~= a and part ~= b then
+						table.insert(segments, { CFrame = part.CFrame, Size = CAST_VECTOR(part.Size) })
+					end
+				end
+				t.expect(#segments >= 9).toBe(true)
+				checkPlan(
+					segments,
+					vector.create(10 - radius, 0, 0),
+					vector.create(10, radius, 0),
+					X_AXIS,
+					vector.create(4, 2, 3)
+				)
+			end)
+		end
+	end)
+
 	-- Planner geometry
 	t.test("SplineJoin: three-segment reverse bends cover both complete endpoint faces", function()
 		for _, reverse in SELECTION_ORDERS do

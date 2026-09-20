@@ -137,6 +137,16 @@ return function(t: TestContext)
 		end)
 	end)
 
+	t.test("RoundedJoin radius defaults to automatic and round-trips", function()
+		withoutSavedSettings(function()
+			local settings = Settings.Load(t.plugin)
+			t.expect(settings.RoundedJoinRadius).toBe(0)
+			settings.RoundedJoinRadius = 2.5
+			Settings.Save(t.plugin, settings)
+			t.expect(Settings.Load(t.plugin).RoundedJoinRadius).toBe(2.5)
+		end)
+	end)
+
 	t.test("All resize modes round-trip", function()
 		local modes = {
 			"OuterTouch",

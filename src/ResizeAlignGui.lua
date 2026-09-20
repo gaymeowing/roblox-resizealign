@@ -329,7 +329,26 @@ local function RoundedJoinOptions(props: {
 		})
 	end
 	return React.createElement(React.Fragment, nil, {
+		Radius = e(OptionEntry, {
+			LayoutOrder = 1,
+			HelpText = "Radius of the rounded filler. A larger radius makes a wider Cylinder, or a more gradual Spline bend. Leave empty or enter \"automatic\" to use the radius the joined faces need, which is also the smallest radius that can be used.",
+			Content = e(NumberInput, {
+				Label = "Radius",
+				Value = props.Settings.RoundedJoinRadius,
+				ZeroLabel = "Automatic",
+				Unit = " studs",
+				TextBoxWidth = UDim.new(0.5, -3),
+				ValueEntered = function(value: number): number
+					if value >= 0 and value <= 1024 then
+						props.Settings.RoundedJoinRadius = value
+						props.UpdatedSettings()
+					end
+					return props.Settings.RoundedJoinRadius
+				end,
+			}),
+		}),
 		FillerType = e(OptionEntry, {
+			LayoutOrder = 2,
 			HelpText = "What to fill the gap between the parts with.\n"
 				.. "<b>•Cylinder</b> — A single Cylinder part.\n"
 				.. "<b>•Spline</b> — A Spline Join made of copies of the first part, which keeps the shape of non-block parts.\n"

@@ -13,6 +13,7 @@ local function makeTestSettings()
 		ResizeMode = "OuterTouch",
 		AcuteWedgeJoin = true,
 		UseCylinderForRoundedJoin = true,
+		RoundedJoinRadius = 0,
 		SplineJoin = table.clone(require(script.Parent.Settings).DefaultSplineJoinOptions),
 		SelectionThreshold = "25",
 		ClassicUI = false,

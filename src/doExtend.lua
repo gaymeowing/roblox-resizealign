@@ -269,7 +269,8 @@ local function fillJoint(
 	pointsA: { Vector3 },
 	pointsB: { Vector3 },
 	offsetA: Vector3,
-	offsetB: Vector3
+	offsetB: Vector3,
+	minRadius: number
 )
 	local maxProj = -math.huge
 	local minProj = math.huge
@@ -290,11 +291,14 @@ local function fillJoint(
 	end
 	local centerPoint = fillPoint + fillAxis * (0.5 * (minProj + maxProj))
 	local length = (maxProj - minProj)
-	local radius = maxRadius
+	-- A smaller filler than the faces need would leave the gap exposed
+	local radius = math.max(maxRadius, minRadius)
 	local cyl = Instance.new("Part")
 	copyPartProps(faceB.Object, cyl)
 	if ShapeUtils.isCylinder(faceA.Object) and ShapeUtils.isCylinder(faceB.Object) then
 		cyl.Shape = Enum.PartType.Ball
+		-- A ball is as long as it is wide
+		length = math.max(length, 2 * radius)
 	else
 		cyl.Shape = Enum.PartType.Cylinder
 	end
@@ -523,7 +527,8 @@ local function doExtend(
 	resizeMode: ResizeMode,
 	acuteWedgeJoin: boolean?,
 	splineOptions: Settings.SplineJoinOptions?,
-	useCylinderForRoundedJoin: boolean?
+	useCylinderForRoundedJoin: boolean?,
+	roundedJoinRadius: number?
 )
 	local pointsA = getFacePoints(faceA)
 	local pointsB = getFacePoints(faceB)
@@ -746,7 +751,7 @@ local function doExtend(
 		-- For a fillet of radius R, the tangent points sit R*tan(turn/2)
 		-- back from that intersection along each of the two source parts.
 		local turn = math.acos(math.clamp(-dirA:Dot(dirB), -1, 1))
-		local setback = roundedRadius * math.tan(turn / 2)
+		local setback = math.max(roundedRadius, roundedJoinRadius or 0) * math.tan(turn / 2)
 		local paddingA, paddingB = lenA - setback, lenB - setback
 		if paddingA <= -extendableA + 0.001 or paddingB <= -extendableB + 0.001 then
 			return
@@ -772,7 +777,17 @@ local function doExtend(
 
 	if resizeMode == "RoundedJoin" then
 		local fillAxis = dirA:Cross(dirB).Unit
-		fillJoint(faceA, faceB, extendPointA + dirA * lenA, fillAxis, pointsA, pointsB, dirA * lenA, dirB * lenB)
+		fillJoint(
+			faceA,
+			faceB,
+			extendPointA + dirA * lenA,
+			fillAxis,
+			pointsA,
+			pointsB,
+			dirA * lenA,
+			dirB * lenB,
+			roundedJoinRadius or 0
+		)
 	end
 
 	if resizeMode == "ButtJoint" then

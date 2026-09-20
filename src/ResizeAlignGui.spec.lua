@@ -22,6 +22,7 @@ local function makeTestSettings()
 		ResizeMode = "OuterTouch",
 		AcuteWedgeJoin = true,
 		UseCylinderForRoundedJoin = true,
+		RoundedJoinRadius = 0,
 		SplineJoin = table.clone(require(script.Parent.Settings).DefaultSplineJoinOptions),
 		SelectionThreshold = "25",
 		ClassicUI = false,
@@ -221,7 +222,11 @@ return function(t: TestContext)
 							t.expect(icon.Image).toBe("rbxassetid://9834555074")
 							continue
 						end
-						local chips = screen:FindFirstChild("RoundedJoinOptions", true).Content.FillerType
+						local options = screen:FindFirstChild("RoundedJoinOptions", true).Content
+						local radius = options.Radius:FindFirstChild("TextBox", true)
+						t.expect(radius.Text:find("Automatic", 1, true) ~= nil).toBe(true)
+						t.expect(options.Radius.LayoutOrder < options.FillerType.LayoutOrder).toBe(true)
+						local chips = options.FillerType
 						t.expect(chips:FindFirstChild("Cylinder", true).Font == Enum.Font.SourceSansBold).toBe(cylinder)
 						t.expect(chips:FindFirstChild("Spline", true).Font == Enum.Font.SourceSansBold).toBe(not cylinder)
 						local filler = row:FindFirstChild("Filler", true)

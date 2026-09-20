@@ -28,6 +28,8 @@ export type ResizeAlignSettings = PluginGuiTypes.PluginGuiSettings & {
 	ResizeMode: ResizeMode,
 	AcuteWedgeJoin: boolean,
 	UseCylinderForRoundedJoin: boolean,
+	-- Zero uses the radius the joined faces need
+	RoundedJoinRadius: number,
 	SplineJoin: SplineJoinOptions,
 	SelectionThreshold: SelectionThreshold,
 	ClassicUI: boolean,
@@ -67,6 +69,7 @@ local function loadSettings(plugin: Plugin): ResizeAlignSettings
 			elseif raw.ResizeMode ~= nil then raw.ResizeMode
 			else "OuterTouch",
 		UseCylinderForRoundedJoin = if raw.UseCylinderForRoundedJoin ~= nil then raw.UseCylinderForRoundedJoin else true,
+		RoundedJoinRadius = if raw.RoundedJoinRadius ~= nil then raw.RoundedJoinRadius else 0,
 		AcuteWedgeJoin = if raw.AcuteWedgeJoin ~= nil then raw.AcuteWedgeJoin else true,
 		SelectionThreshold = if raw.SelectionThreshold ~= nil then raw.SelectionThreshold else "25",
 		ClassicUI = if raw.ClassicUI ~= nil then raw.ClassicUI else false,
@@ -88,6 +91,7 @@ local function saveSettings(plugin: Plugin, settings: ResizeAlignSettings)
 		SplineJoin = settings.SplineJoin,
 		AcuteWedgeJoin = settings.AcuteWedgeJoin,
 		UseCylinderForRoundedJoin = settings.UseCylinderForRoundedJoin,
+		RoundedJoinRadius = settings.RoundedJoinRadius,
 		SelectionThreshold = settings.SelectionThreshold,
 		ClassicUI = settings.ClassicUI,
 	})
