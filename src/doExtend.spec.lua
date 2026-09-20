@@ -1106,39 +1106,42 @@ return function(t: TestContext)
 	-- RoundedJoin with cylinders
 	--------------------------------------------------------------------------------
 
-	t.test("RoundedJoin: cylinder parts produce arc clones", function()
-		local partA = Instance.new("Part")
-		partA.Shape = Enum.PartType.Cylinder
-		partA.Size = Vector3.new(4, 2, 2)
-		partA.CFrame = CFrame.new(-3, 0, 0)
-		partA.Anchored = true
-		partA.Parent = workspace
+	t.test("RoundedJoin: cylinder parts are joined with a sphere for either filler option", function()
+		for _, useCylinder in { true, false } do
+			local folder = Instance.new("Folder")
+			folder.Parent = workspace
 
-		local partB = Instance.new("Part")
-		partB.Shape = Enum.PartType.Cylinder
-		partB.Size = Vector3.new(4, 2, 2)
-		partB.CFrame = CFrame.new(2, 2, 0) * CFrame.Angles(0, 0, math.rad(45))
-		partB.Anchored = true
-		partB.Parent = workspace
+			local partA = Instance.new("Part")
+			partA.Shape = Enum.PartType.Cylinder
+			partA.Size = Vector3.new(4, 2, 2)
+			partA.CFrame = CFrame.new(-3, 0, 0)
+			partA.Anchored = true
+			partA.Parent = folder
 
-		local faceA = makeFace(partA, Enum.NormalId.Right)
-		local faceB = makeFace(partB, Enum.NormalId.Left)
+			local partB = Instance.new("Part")
+			partB.Shape = Enum.PartType.Cylinder
+			partB.Size = Vector3.new(4, 2, 2)
+			partB.CFrame = CFrame.new(2, 2, 0) * CFrame.Angles(0, 0, math.rad(45))
+			partB.Anchored = true
+			partB.Parent = folder
 
-		doExtend(faceA, faceB, "RoundedJoin")
+			local faceA = makeFace(partA, Enum.NormalId.Right)
+			local faceB = makeFace(partB, Enum.NormalId.Left)
 
-		-- Find the filler part
-		local fillerPart = nil
-		for _, child in workspace:GetChildren() do
-			if child:IsA("Part") and child ~= partA and child ~= partB then
-				fillerPart = child
-				break
+			doExtend(faceA, faceB, "RoundedJoin", nil, nil, useCylinder)
+
+			local fillers = {}
+			for _, child in folder:GetChildren() do
+				if child ~= partA and child ~= partB then
+					table.insert(fillers, child)
+				end
 			end
-		end
-		t.expect(fillerPart ~= nil).toBe(true)
+			t.expect(#fillers).toBe(1)
+			t.expect(fillers[1].Shape).toBe(Enum.PartType.Ball)
+			t.expect(fillers[1].Size:FuzzyEq(Vector3.new(2, 2, 2), 0.0001)).toBe(true)
 
-		partA:Destroy()
-		partB:Destroy()
-		cleanup()
+			folder:Destroy()
+		end
 	end)
 
 	t.test("RoundedJoin: block parts produce arc clones", function()

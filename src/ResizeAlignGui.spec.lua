@@ -110,7 +110,11 @@ return function(t: TestContext)
 						if outer and not classic then
 							local label = outer.Content.AcuteWedgeJoin:FindFirstChild("Label", true)
 							t.expect(label.TextWrapped).toBe(true)
-							t.expect(label.AbsoluteSize.Y > 22).toBe(true)
+							-- The label must wrap rather than push the checkbox out of the panel
+							local checkBox = outer.Content.AcuteWedgeJoin:FindFirstChild("CheckBox", true)
+							t.expect(
+								checkBox.AbsolutePosition.X + checkBox.AbsoluteSize.X <= outer.AbsolutePosition.X + outer.AbsoluteSize.X
+							).toBe(true)
 						end
 						if spline then
 							local preview = screen:FindFirstChild("SplineJoin", true):FindFirstChild("Filler", true)
@@ -203,6 +207,9 @@ return function(t: TestContext)
 						settings.UseCylinderForRoundedJoin = cylinder
 						render()
 						local row = screen:FindFirstChild("RoundedJoin", true)
+						local chips = screen:FindFirstChild("RoundedJoinOptions", true).Content.FillerType
+						t.expect(chips:FindFirstChild("Cylinder", true).Font == Enum.Font.SourceSansBold).toBe(cylinder)
+						t.expect(chips:FindFirstChild("Spline", true).Font == Enum.Font.SourceSansBold).toBe(not cylinder)
 						if classic then
 							local icon = row:FindFirstChild("Icon", true)
 							t.expect(icon:IsA("ImageLabel")).toBe(true)

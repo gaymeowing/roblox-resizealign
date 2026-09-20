@@ -738,7 +738,9 @@ local function doExtend(
 		end
 	end
 
-	if roundedRadius and not useCylinderForRoundedJoin then
+	-- Two cylinders always get the sphere filler from fillJoint
+	local isCylinderPair = ShapeUtils.isCylinder(faceA.Object) and ShapeUtils.isCylinder(faceB.Object)
+	if roundedRadius and not useCylinderForRoundedJoin and not isCylinderPair then
 		-- Preserve Rounded Join's original intersection and filler radius.
 		-- For a fillet of radius R, the tangent points sit R*tan(turn/2)
 		-- back from that intersection along each of the two source parts.

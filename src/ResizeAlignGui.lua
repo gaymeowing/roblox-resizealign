@@ -302,7 +302,7 @@ local function OuterTouchOptions(props: {
 		AcuteWedgeJoin = e(OptionEntry, {
 			HelpText = "Automatically use Wedge Join instead of Outer Touch when the angle between faces is small to allow the formation of a sharp point for tight corners.",
 			Content = e(Checkbox, {
-				Label = "Wedge Join tight corners",
+				Label = "Wedge Join if needed",
 				Checked = props.Settings.AcuteWedgeJoin,
 				Changed = function(value: boolean)
 					props.Settings.AcuteWedgeJoin = value
@@ -317,16 +317,36 @@ local function RoundedJoinOptions(props: {
 	Settings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
 })
+	local useCylinder = props.Settings.UseCylinderForRoundedJoin
+	local function fillerChip(text: string, cylinder: boolean, layoutOrder: number)
+		return e(ChipForToggle, {
+			Text = text,
+			IsCurrent = useCylinder == cylinder,
+			LayoutOrder = layoutOrder,
+			OnClick = function()
+				props.Settings.UseCylinderForRoundedJoin = cylinder
+				props.UpdatedSettings()
+			end,
+		})
+	end
 	return React.createElement(React.Fragment, nil, {
-		UseCylinderForRoundedJoin = e(OptionEntry, {
-			HelpText = "Uses a Cylinder part for joining both parts, rather than using a Spline Join.",
-			Content = e(Checkbox, {
-				Label = "Use Cylinder For Join",
-				Checked = props.Settings.UseCylinderForRoundedJoin,
-				Changed = function(value: boolean)
-					props.Settings.UseCylinderForRoundedJoin = value
-					props.UpdatedSettings()
-				end,
+		FillerType = e(OptionEntry, {
+			HelpText = "What to fill the gap between the parts with.\n"
+				.. "<b>•Cylinder</b> — A single Cylinder part.\n"
+				.. "<b>•Spline</b> — A Spline Join made of copies of the first part, which keeps the shape of non-block parts.\n"
+				.. "Joining two cylinders always uses a sphere.",
+			Content = e("Frame", {
+				Size = UDim2.fromScale(1, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, {
+				ListLayout = e("UIListLayout", {
+					FillDirection = Enum.FillDirection.Horizontal,
+					SortOrder = Enum.SortOrder.LayoutOrder,
+					Padding = UDim.new(0, 4),
+				}),
+				Cylinder = fillerChip("Cylinder", true, 1),
+				Spline = fillerChip("Spline", false, 2),
 			}),
 		}),
 	})
