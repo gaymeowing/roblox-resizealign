@@ -245,29 +245,17 @@ local function SplineJoinOptions(props: {
 	end
 
 	return React.createElement(React.Fragment, nil, {
-		AutomaticSegments = e(OptionEntry, {
-			LayoutOrder = 1,
-			HelpText = "Choose the number of clones automatically from the spline length and curvature. Turn this off to manually enter a segment count.",
-			Content = e(Checkbox, {
-				Label = "Automatic segments",
-				Checked = options.AutomaticSegments,
-				Changed = function(value: boolean)
-					options.AutomaticSegments = value
-					props.UpdatedSettings()
-				end,
-			}),
-		}),
-		Segments = not options.AutomaticSegments and e(OptionEntry, {
+		Segments = e(OptionEntry, {
 			LayoutOrder = 2,
-			HelpText = "Number of clones making up the spline. More segments produce a smoother curve.",
+			HelpText = "Number of clones making up the spline. More segments produce a smoother curve. Leave empty or enter \"automatic\" to choose the count from the spline length and curvature.",
 			Content = e(NumberInput, {
 				Label = "Segments",
 				Value = options.Segments,
+				ZeroLabel = "Automatic",
 				TextBoxWidth = UDim.new(0.5, -3),
 				ValueEntered = function(value: number): number
-					if value % 1 == 0 and value >= 1 then
+					if value % 1 == 0 and value >= 0 then
 						options.Segments = value
-						options.AutomaticSegments = false
 						props.UpdatedSettings()
 					end
 					return options.Segments

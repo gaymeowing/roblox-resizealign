@@ -6,7 +6,7 @@ local PluginGuiTypes = require("./PluginGui/Types")
 
 export type ResizeMode = "OuterTouch" | "InnerTouch" | "WedgeJoin" | "RoundedJoin" | "SplineJoin" | "ButtJoint" | "ExtendUpTo" | "ExtendInto"
 export type SplineJoinOptions = {
-	AutomaticSegments: boolean,
+	-- Zero chooses the segment count automatically
 	Segments: number,
 	Padding: number,
 	AdvancedPadding: boolean,
@@ -15,8 +15,7 @@ export type SplineJoinOptions = {
 }
 
 local DEFAULT_SPLINE_JOIN_OPTIONS: SplineJoinOptions = {
-	AutomaticSegments = true,
-	Segments = 12,
+	Segments = 0,
 	Padding = 0,
 	AdvancedPadding = false,
 	PaddingA = 0,
@@ -37,6 +36,11 @@ export type ResizeAlignSettings = PluginGuiTypes.PluginGuiSettings & {
 local function loadSettings(plugin: Plugin): ResizeAlignSettings
 	local raw = plugin:GetSetting(kSettingsKey) or {}
 	local splineJoin = raw.SplineJoin or raw.ArcJoin or {}
+	-- Migrate the old AutomaticSegments checkbox, which is now Segments = 0
+	if splineJoin.AutomaticSegments then
+		splineJoin.Segments = 0
+	end
+	splineJoin.AutomaticSegments = nil
 	for key, default in DEFAULT_SPLINE_JOIN_OPTIONS do
 		if splineJoin[key] == nil then
 			splineJoin[key] = default

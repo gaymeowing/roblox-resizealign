@@ -598,7 +598,7 @@ local function doExtend(
 			faceB,
 			if options.AdvancedPadding then options.PaddingA else options.Padding,
 			if options.AdvancedPadding then options.PaddingB else options.Padding,
-			if options.AutomaticSegments then nil else options.Segments
+			if options.Segments == 0 then nil else options.Segments
 		)
 		return
 	end

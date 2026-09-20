@@ -115,7 +115,9 @@ return function(t: TestContext)
 							local preview = screen:FindFirstChild("SplineJoin", true):FindFirstChild("Filler", true)
 							t.expect(preview:IsA("Model")).toBe(true)
 							t.expect(preview:FindFirstChildWhichIsA("BasePart") ~= nil).toBe(true)
-							t.expect(spline.Content:FindFirstChild("Segments") == nil).toBe(true)
+							t.expect(spline.Content:FindFirstChild("AutomaticSegments") == nil).toBe(true)
+							local segments = spline.Content.Segments:FindFirstChild("TextBox", true)
+							t.expect(segments.Text:find("Automatic", 1, true) ~= nil).toBe(true)
 							t.expect(panel.BackgroundColor3).toBe(Color3.fromRGB(18, 18, 18))
 							local textbox = spline.Content.Padding:FindFirstChild("TextBox", true)
 							t.expect(textbox.Text:find("studs", 1, true) ~= nil).toBe(true)
@@ -154,14 +156,10 @@ return function(t: TestContext)
 					settings.SplineJoin.AdvancedPadding = true
 					render()
 					t.expect(panel.AbsoluteSize.Y).toBe(height)
-					settings.SplineJoin.AutomaticSegments = false
+					settings.SplineJoin.Segments = 12
 					render()
-					t.expect(panel.AbsoluteSize.Y > height).toBe(true)
+					t.expect(panel.AbsoluteSize.Y).toBe(height)
 					local content = panel.Content
-					local a, b =
-						content.AutomaticSegments:FindFirstChild("CheckBox", true),
-						content.AdvancedPadding:FindFirstChild("CheckBox", true)
-					t.expect(a.AbsolutePosition.X + a.AbsoluteSize.X).toBe(b.AbsolutePosition.X + b.AbsoluteSize.X)
 					local segments = content.Segments
 					local segmentLabel = segments:FindFirstChild("Label", true)
 					local segmentTextBox = segments:FindFirstChild("TextBox", true)
@@ -173,6 +171,23 @@ return function(t: TestContext)
 				end,
 			})
 		end
+	end)
+
+	t.test("Spline segments input shows Automatic for zero", function()
+		renderGui({
+			ResizeMode = "SplineJoin",
+			Check = function(screen, settings, render)
+				local function textBox(): TextBox
+					return screen:FindFirstChild("SplineJoinOptions", true).Content.Segments:FindFirstChild("TextBox", true)
+				end
+				t.expect(settings.SplineJoin.Segments).toBe(0)
+				t.expect(textBox().Text:find("Automatic", 1, true) ~= nil).toBe(true)
+				settings.SplineJoin.Segments = 12
+				render()
+				t.expect(textBox().Text:find("Automatic", 1, true)).toBe(nil)
+				t.expect(textBox().Text:find("12", 1, true) ~= nil).toBe(true)
+			end,
+		})
 	end)
 
 	t.test("Rounded Join menu switches between segmented and original cylinder previews", function()

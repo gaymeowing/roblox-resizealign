@@ -16,10 +16,9 @@ return function(t: TestContext)
 	t.test("SplineJoin options default and round-trip independently", function()
 		local settings = Settings.Load(t.plugin)
 		local saved = table.clone(settings.SplineJoin)
-		t.expect(settings.SplineJoin.AutomaticSegments).toBe(true)
+		t.expect(settings.SplineJoin.Segments).toBe(0)
 		t.expect(settings.SplineJoin.Padding).toBe(0)
 		settings.SplineJoin = {
-			AutomaticSegments = false,
 			Segments = 24,
 			Padding = 0.5,
 			AdvancedPadding = true,
@@ -50,9 +49,23 @@ return function(t: TestContext)
 		})
 		local settings = Settings.Load(t.plugin)
 		t.expect(settings.ResizeMode).toBe("SplineJoin")
-		t.expect(settings.SplineJoin.AutomaticSegments).toBe(false)
+		t.expect(settings.SplineJoin.AutomaticSegments).toBe(nil)
 		t.expect(settings.SplineJoin.Segments).toBe(24)
 		t.expect(settings.SplineJoin.Padding).toBe(0.5)
+		Settings.Save(t.plugin, previous)
+	end)
+
+	t.test("SplineJoin migrates the AutomaticSegments checkbox to zero segments", function()
+		local previous = Settings.Load(t.plugin)
+		t.plugin:SetSetting("resizeAlignState", {
+			SplineJoin = {
+				AutomaticSegments = true,
+				Segments = 12,
+			},
+		})
+		local settings = Settings.Load(t.plugin)
+		t.expect(settings.SplineJoin.AutomaticSegments).toBe(nil)
+		t.expect(settings.SplineJoin.Segments).toBe(0)
 		Settings.Save(t.plugin, previous)
 	end)
 

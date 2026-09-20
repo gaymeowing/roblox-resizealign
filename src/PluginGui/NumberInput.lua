@@ -8,21 +8,7 @@ local React = require(Packages.React)
 local e = React.createElement
 
 local Colors = require("./Colors")
-
-local function InterpretValue(input: string): number?
-	-- Implicit divide by 360
-	if input:sub(1, 1) == "/" then
-		input = "360" .. input
-	end
-	local fragment, _err = loadstring("return " .. input)
-	if fragment then
-		local success, result = pcall(fragment)
-		if success and typeof(result) == "number" then
-			return result
-		end
-	end
-	return nil
-end
+local interpretNumberInput = require("./interpretNumberInput")
 
 local function NumberInput(props: {
 	Label: string?,
@@ -33,19 +19,23 @@ local function NumberInput(props: {
 	ChipColor: Color3?,
 	Grow: boolean?,
 	EmptyAsZero: boolean?,
+	-- Show this text in place of a zero value. Entering it (in any case) or
+	-- leaving the box empty sets the value to zero.
+	ZeroLabel: string?,
 	TextBoxWidth: UDim?,
 })
 	local hasFocus, setHasFocus = React.useState(false)
 	local textBoxWidth = props.TextBoxWidth
 
-	local valueText = string.format("%g", props.Value)
-	local displayText =
-		string.format('<b>%s</b><font size="14">%s</font>', valueText, if props.Unit then props.Unit else "")
+	local showZeroLabel = props.ZeroLabel ~= nil and props.Value == 0
+	local valueText = if showZeroLabel then props.ZeroLabel :: string else string.format("%g", props.Value)
+	local unitText = if props.Unit and not showZeroLabel then props.Unit else ""
+	local displayText = string.format('<b>%s</b><font size="14">%s</font>', valueText, unitText)
 
 	local textBoxRef = React.useRef(nil)
 	local numberPartLength = TextService:GetTextSize(valueText, 20, Enum.Font.RobotoMono, Vector2.new(1000, 1000)).X
 	local unitPartLength = TextService:GetTextSize(
-		if props.Unit then props.Unit else "",
+		unitText,
 		14,
 		Enum.Font.RobotoMono,
 		Vector2.new(1000, 1000)
@@ -54,7 +44,7 @@ local function NumberInput(props: {
 	local textFitsAtNormalSize = not textBoxRef.current or textBoxRef.current.AbsoluteSize.X >= displayTextSize + 4
 
 	local onFocusLost = React.useCallback(function(object: TextBox, enterPressed: boolean)
-		local newValue = if props.EmptyAsZero and object.Text:match("^%s*$") then 0 else InterpretValue(object.Text)
+		local newValue = interpretNumberInput(object.Text, props.EmptyAsZero, props.ZeroLabel)
 		if newValue then
 			newValue = props.ValueEntered(newValue)
 			-- If the value didn't change we need to revert because we won't get rerendered
@@ -66,14 +56,15 @@ local function NumberInput(props: {
 			object.Text = displayText
 		end
 		setHasFocus(false)
-	end, { props.ValueEntered, displayText, props.EmptyAsZero } :: { any })
+	end, { props.ValueEntered, displayText, props.EmptyAsZero, props.ZeroLabel } :: { any })
 
 	local onFocused = React.useCallback(function(object: TextBox)
-		object.Text = tostring(props.Value)
+		-- Start empty rather than making the user delete the zero label
+		object.Text = if showZeroLabel then "" else tostring(props.Value)
 		object.CursorPosition = #object.Text + 1
 		object.SelectionStart = -1
 		setHasFocus(true)
-	end, { props.Value })
+	end, { props.Value, showZeroLabel } :: { any })
 
 	return e("Frame", {
 		Size = if props.Grow then UDim2.new() else UDim2.new(1, 0, 0, 0),

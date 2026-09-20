@@ -467,7 +467,6 @@ return function(t: TestContext)
 				end
 
 				local options = table.clone(Settings.DefaultSplineJoinOptions)
-				options.AutomaticSegments = false
 				options.Segments = 12
 				doExtend(first, last, "SplineJoin", nil, options)
 
@@ -629,7 +628,7 @@ return function(t: TestContext)
 
 			local options = table.clone(Settings.DefaultSplineJoinOptions)
 			options.Padding = 0.6
-			options.AutomaticSegments = true
+			options.Segments = 0
 
 			local first = {
 				Object = if fixture.Reverse then e else c,
@@ -833,7 +832,6 @@ return function(t: TestContext)
 				a.Size = CAST_VECTOR3(vector.create(4, thickness, 3))
 				b.Size = CAST_VECTOR3(vector.create(thickness, 4, 3))
 				local ignoredOptions = table.clone(Settings.DefaultSplineJoinOptions)
-				ignoredOptions.AutomaticSegments = false
 				ignoredOptions.Segments = 1
 				ignoredOptions.Padding = 100
 				doExtend(faceA, faceB, "RoundedJoin", false, ignoredOptions)
@@ -1386,7 +1384,6 @@ return function(t: TestContext)
 	t.test("SplineJoin: shared padding extends both ends and preserves clones", function()
 		withParts(function(folder, a, b, faceA, faceB)
 			local options = table.clone(Settings.DefaultSplineJoinOptions)
-			options.AutomaticSegments = false
 			options.Segments = 7
 			options.Padding = 2
 			doExtend(faceA, faceB, "SplineJoin", false, options)
@@ -1446,7 +1443,6 @@ return function(t: TestContext)
 				a:SetAttribute("ArcTemplate", nil)
 				b.Color = if sameProperties then a.Color else Color3.new(1, 0, 0)
 				local options = table.clone(Settings.DefaultSplineJoinOptions)
-				options.AutomaticSegments = false
 				options.Segments = 12
 				doExtend(faceA, faceB, "SplineJoin", false, options)
 				local aSize = CAST_VECTOR(a.Size)
@@ -1467,11 +1463,11 @@ return function(t: TestContext)
 	end)
 
 	t.test("SplineJoin: invalid counts and excessive padding leave sources untouched", function()
-		local segmentCounts = { 0, -1, 1.5, math.huge, 0 / 0 }
+		-- Zero is not invalid, it selects an automatic count
+		local segmentCounts = { -1, 1.5, math.huge, 0 / 0 }
 		for _, count in segmentCounts do
 			withParts(function(folder, a, b, faceA, faceB)
 				local options = table.clone(Settings.DefaultSplineJoinOptions)
-				options.AutomaticSegments = false
 				options.Segments = count
 				options.Padding = 2
 				t.expect(function()
