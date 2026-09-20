@@ -482,6 +482,26 @@ local function createSplineJoin(
 		error("Spline Join: the segment count or resulting segment sizes cannot form a join.")
 	end
 
+	-- Color and Transparency are the visual properties that can be blended, so
+	-- when the two parts differ in them, fade from one to the other along the
+	-- spline. Each segment takes the blend at its middle, measured by length.
+	local objectA, objectB = faceA.Object, faceB.Object
+	if objectA.Color ~= objectB.Color or objectA.Transparency ~= objectB.Transparency then
+		local lengthAxis = localNormalA:Abs()
+		local totalLength = 0
+		for _, part in parts do
+			totalLength += part.Size:Dot(lengthAxis)
+		end
+		local coveredLength = 0
+		for _, part in parts do
+			local length = part.Size:Dot(lengthAxis)
+			local alpha = (coveredLength + length / 2) / totalLength
+			coveredLength += length
+			part.Color = objectA.Color:Lerp(objectB.Color, alpha)
+			part.Transparency = objectA.Transparency + (objectB.Transparency - objectA.Transparency) * alpha
+		end
+	end
+
 	local first = 1
 	local last = #parts
 	local extensionA = getSplineExtension(faceA.Object, faceA, parts[first])

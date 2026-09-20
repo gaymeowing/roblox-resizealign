@@ -849,6 +849,7 @@ return function(t: TestContext)
 			withParts(function(folder, a, b, faceA, faceB)
 				a.Size = CAST_VECTOR3(vector.create(4, thickness, 3))
 				b.Size = CAST_VECTOR3(vector.create(thickness, 4, 3))
+				b.Color = a.Color
 				local ignoredOptions = table.clone(Settings.DefaultSplineJoinOptions)
 				ignoredOptions.Segments = 1
 				ignoredOptions.Padding = 100
@@ -1500,6 +1501,7 @@ return function(t: TestContext)
 	-- Padding and extension integration
 	t.test("SplineJoin: shared padding extends both ends and preserves clones", function()
 		withParts(function(folder, a, b, faceA, faceB)
+			b.Color = a.Color
 			local options = table.clone(Settings.DefaultSplineJoinOptions)
 			options.Segments = 7
 			options.Padding = 2
@@ -1535,6 +1537,53 @@ return function(t: TestContext)
 				vector.create(4, 2, 3)
 			)
 		end)
+	end)
+
+	t.test("SplineJoin: fades Color and Transparency between parts that differ in them", function()
+		local cases = {
+			{ Color = Color3.new(0, 0, 1), Transparency = 0.5 },
+			{ Color = Color3.new(0, 0, 1), Transparency = 0 },
+			{ Color = Color3.new(1, 0, 0), Transparency = 0.5 },
+			{ Color = Color3.new(1, 0, 0), Transparency = 0 },
+		}
+		for _, case in cases do
+			withParts(function(folder, a, b, faceA, faceB)
+				a.Color = Color3.new(1, 0, 0)
+				b.Color = case.Color
+				b.Transparency = case.Transparency
+				local options = table.clone(Settings.DefaultSplineJoinOptions)
+				options.Segments = 8
+				doExtend(faceA, faceB, "SplineJoin", false, options)
+
+				-- Generated parts are parented in order from the first part to the second
+				local previousBlue, previousTransparency = 0, 0
+				local count = 0
+				for _, part in folder:GetChildren() do
+					if part == a or part == b then
+						continue
+					end
+					count += 1
+					if case.Color == a.Color then
+						t.expect(part.Color).toBe(a.Color)
+					else
+						t.expect(part.Color.B > previousBlue and part.Color.B < 1).toBe(true)
+						-- Part colors are stored with 8 bits per channel
+						t.expect(math.abs(part.Color.R - (1 - part.Color.B)) < 2 / 255).toBe(true)
+						previousBlue = part.Color.B
+					end
+					if case.Transparency == 0 then
+						t.expect(part.Transparency).toBe(0)
+					else
+						t.expect(part.Transparency > previousTransparency and part.Transparency < 0.5).toBe(true)
+						previousTransparency = part.Transparency
+					end
+				end
+				t.expect(count >= 6).toBe(true)
+				t.expect(a.Color).toBe(Color3.new(1, 0, 0))
+				t.expect(b.Color).toBe(case.Color)
+				t.expect(b.Transparency).toBe(case.Transparency)
+			end)
+		end
 	end)
 
 	t.test("SplineJoin: advanced padding extends each end independently", function()
