@@ -94,7 +94,6 @@ local function ExpandableModeButton(props: {
 	ExpandedContent: any,
 	OptionsName: string,
 	ContentInset: number?,
-	ShowOutline: boolean?,
 	LayoutOrder: number?,
 })
 	local expandedContent = props.ExpandedContent
@@ -153,17 +152,17 @@ local function ExpandableModeButton(props: {
 							Padding = UDim.new(0, 6),
 						}),
 						PaddingInset = e("UIPadding", {
-							PaddingTop = UDim.new(0, if props.ShowOutline then 6 else 6),
-							PaddingBottom = UDim.new(0, if props.ShowOutline then 7 else 4),
-							PaddingLeft = UDim.new(0, if props.ShowOutline then 8 else 4),
-							PaddingRight = UDim.new(0, if props.ShowOutline then 8 else 4),
+							PaddingTop = UDim.new(0, 6),
+							PaddingBottom = UDim.new(0, 7),
+							PaddingLeft = UDim.new(0, 8),
+							PaddingRight = UDim.new(0, 8),
 						}),
 						Options = expandedContent,
 					}),
 				}),
 			}),
 		}),
-		Outline = expandedContent and props.ShowOutline and e("Frame", {
+		Outline = expandedContent and e("Frame", {
 			ZIndex = 4,
 			Position = UDim2.fromOffset(contentInset, 0),
 			Size = UDim2.new(1, -contentInset, 1, 0),
@@ -400,7 +399,6 @@ local function ResizeMethodPanel(props: {
 			LayoutOrder = layoutOrder,
 			OptionsName = mode .. "Options",
 			ContentInset = if props.Settings.HaveHelp then 20 else 0,
-			ShowOutline = true,
 			ExpandedContent = if isCurrent then expandedContent else nil,
 		})
 	end
@@ -600,9 +598,7 @@ local function IconOperationButton(props: {
 	Text: string,
 	SubText: string,
 	IsCurrent: boolean,
-	Icon: string?,
-	PreviewMode: ModeDemo.PreviewMode?,
-	OpenBelow: boolean?,
+	Icon: string,
 	LayoutOrder: number?,
 	OnClick: () -> (),
 })
@@ -630,31 +626,21 @@ local function IconOperationButton(props: {
 				Height = 32,
 				OnClick = props.OnClick,
 				JoinedRight = true,
-				OpenBelow = props.OpenBelow,
 			}),
 		}),
-		Icon = if props.PreviewMode
-			then e(ModeDemo, {
-				PreviewMode = props.PreviewMode,
-				JoinedLeft = true,
-				OpenBelow = props.OpenBelow,
-				Animate = props.IsCurrent,
-				Size = UDim2.fromOffset(64, 32),
-				LayoutOrder = 2,
-			})
-			else e("ImageLabel", {
-				Size = UDim2.fromOffset(64, 32),
-				BackgroundTransparency = 1,
-				Image = props.Icon,
-				LayoutOrder = 2,
-			}, {
-				Corner = e("UICorner", {
-					TopLeftRadius = UDim.new(),
-					BottomLeftRadius = UDim.new(),
-					TopRightRadius = UDim.new(0, 4),
-					BottomRightRadius = UDim.new(0, if props.OpenBelow then 0 else 4),
-				}),
+		Icon = e("ImageLabel", {
+			Size = UDim2.fromOffset(64, 32),
+			BackgroundTransparency = 1,
+			Image = props.Icon,
+			LayoutOrder = 2,
+		}, {
+			Corner = e("UICorner", {
+				TopLeftRadius = UDim.new(),
+				BottomLeftRadius = UDim.new(),
+				TopRightRadius = UDim.new(0, 4),
+				BottomRightRadius = UDim.new(0, 4),
 			}),
+		}),
 	})
 end
 
@@ -680,7 +666,6 @@ local function ClassicResizeMethodPanel(props: {
 			SubText = subText,
 			IsCurrent = current == mode,
 			Icon = RESIZE_MODE_ICONS[mode],
-			PreviewMode = if mode == "SplineJoin" then mode else nil,
 			LayoutOrder = layoutOrder,
 			OnClick = function()
 				props.Settings.ResizeMode = mode
@@ -689,73 +674,18 @@ local function ClassicResizeMethodPanel(props: {
 		})
 	end
 
-	local function makeExpandableButton(
-		mode: Settings.ResizeMode,
-		label: string,
-		subText: string,
-		layoutOrder: number,
-		expandedContent: any
-	)
-		local isCurrent = current == mode
-		local content = if isCurrent then expandedContent else nil
-		return e(ExpandableModeButton, {
-			ButtonComponent = IconOperationButton,
-			ButtonProps = {
-				Text = label,
-				SubText = subText,
-				IsCurrent = isCurrent,
-				Icon = RESIZE_MODE_ICONS[mode],
-				PreviewMode = if mode == "SplineJoin" then mode else nil,
-				OpenBelow = content ~= nil,
-				OnClick = function()
-					props.Settings.ResizeMode = mode
-					props.UpdatedSettings()
-				end,
-			},
-			LayoutOrder = layoutOrder,
-			OptionsName = mode .. "Options",
-			ExpandedContent = content,
-		})
-	end
+	-- The classic UI only offers the original plugin's modes, without sub-options
 	return e(SubPanel, {
 		Title = "Resize Method",
 		LayoutOrder = props.LayoutOrder,
 		Padding = UDim.new(0, 4),
 	}, {
-		OuterTouch = makeExpandableButton(
-			"OuterTouch",
-			"Outer Touch",
-			"extend to outermost alignment",
-			1,
-			e(OuterTouchOptions, {
-				Settings = props.Settings,
-				UpdatedSettings = props.UpdatedSettings,
-			})
-		),
-		InnerTouch = makeButton("InnerTouch", "Inner Touch", "extend to innermost alignment", 3),
-		RoundedJoin = makeExpandableButton(
-			"RoundedJoin",
-			"Rounded Join",
-			"fill with a curved join",
-			4,
-			e(RoundedJoinOptions, {
-				Settings = props.Settings,
-				UpdatedSettings = props.UpdatedSettings,
-			})
-		),
-		SplineJoin = makeExpandableButton(
-			"SplineJoin",
-			"Spline Join",
-			"connect with a spline of parts",
-			5,
-			e(SplineJoinOptions, {
-				Options = props.Settings.SplineJoin,
-				UpdatedSettings = props.UpdatedSettings,
-			})
-		),
-		ButtJoint = makeButton("ButtJoint", "Butt Joint", "butt up against second face", 6),
-		ExtendUpTo = makeButton("ExtendUpTo", "Extend Up To", "extend to first contact", 7),
-		ExtendInto = makeButton("ExtendInto", "Extend Into", "extend to full penetration", 8),
+		OuterTouch = makeButton("OuterTouch", "Outer Touch", "extend to outermost alignment", 1),
+		InnerTouch = makeButton("InnerTouch", "Inner Touch", "extend to innermost alignment", 2),
+		RoundedJoin = makeButton("RoundedJoin", "Rounded Join", "meet in the middle with filler", 3),
+		ButtJoint = makeButton("ButtJoint", "Butt Joint", "butt up against second face", 4),
+		ExtendUpTo = makeButton("ExtendUpTo", "Extend Up To", "extend to first contact", 5),
+		ExtendInto = makeButton("ExtendInto", "Extend Into", "extend to full penetration", 6),
 	})
 end
 

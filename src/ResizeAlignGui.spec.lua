@@ -79,103 +79,111 @@ local function renderGui(props: {
 end
 
 return function(t: TestContext)
-	t.test("Attached menus follow selection in both UI styles", function()
-		for _, classic in { false, true } do
-			for _, mode in { "SplineJoin", "OuterTouch", "InnerTouch", "RoundedJoin" } do
-				renderGui({
-					ClassicUI = classic,
-					ResizeMode = mode,
-					HaveHelp = true,
-					Check = function(screen)
-						local spline = screen:FindFirstChild("SplineJoinOptions", true)
-						local outer = screen:FindFirstChild("OuterTouchOptions", true)
-						t.expect(spline ~= nil).toBe(mode == "SplineJoin")
-						t.expect(outer ~= nil).toBe(mode == "OuterTouch")
-						local rounded = screen:FindFirstChild("RoundedJoinOptions", true)
-						local panel = spline or outer or rounded
-						if panel then
-							local row = screen:FindFirstChild(if spline then "SplineJoin" elseif rounded then "RoundedJoin" else "OuterTouch", true)
-							t.expect(row.LayoutOrder).toBe(
-								-- The classic UI has no Wedge Join row
-								if spline then (if classic then 5 else 7) elseif rounded then (if classic then 4 else 5) else 1
-							)
-							t.expect(panel.Position.X.Offset).toBe(if classic then 0 else 20)
-							local outline = row:FindFirstChild("Outline")
-							t.expect(outline == nil).toBe(classic)
-							if outline then
-								t.expect(outline.Stroke.Color).toBe(Color3.new(1, 1, 1))
-								t.expect(outline.BackgroundTransparency).toBe(1)
-							end
-						end
-						if outer and not classic then
-							local label = outer.Content.AcuteWedgeJoin:FindFirstChild("Label", true)
-							t.expect(label.TextWrapped).toBe(true)
-							-- The label must wrap rather than push the checkbox out of the panel
-							local checkBox = outer.Content.AcuteWedgeJoin:FindFirstChild("CheckBox", true)
-							t.expect(
-								checkBox.AbsolutePosition.X + checkBox.AbsoluteSize.X <= outer.AbsolutePosition.X + outer.AbsoluteSize.X
-							).toBe(true)
-						end
-						if spline then
-							local preview = screen:FindFirstChild("SplineJoin", true):FindFirstChild("Filler", true)
-							t.expect(preview:IsA("Model")).toBe(true)
-							t.expect(preview:FindFirstChildWhichIsA("BasePart") ~= nil).toBe(true)
-							t.expect(spline.Content:FindFirstChild("AutomaticSegments") == nil).toBe(true)
-							local segments = spline.Content.Segments:FindFirstChild("TextBox", true)
-							t.expect(segments.Text:find("Automatic", 1, true) ~= nil).toBe(true)
-							t.expect(panel.BackgroundColor3).toBe(Color3.fromRGB(18, 18, 18))
-							local textbox = spline.Content.Padding:FindFirstChild("TextBox", true)
-							t.expect(textbox.Text:find("studs", 1, true) ~= nil).toBe(true)
-						end
-					end,
-				})
-			end
+	t.test("Attached menus follow selection", function()
+		for _, mode in { "SplineJoin", "OuterTouch", "InnerTouch", "RoundedJoin" } do
+			renderGui({
+				ResizeMode = mode,
+				HaveHelp = true,
+				Check = function(screen)
+					local spline = screen:FindFirstChild("SplineJoinOptions", true)
+					local outer = screen:FindFirstChild("OuterTouchOptions", true)
+					t.expect(spline ~= nil).toBe(mode == "SplineJoin")
+					t.expect(outer ~= nil).toBe(mode == "OuterTouch")
+					local rounded = screen:FindFirstChild("RoundedJoinOptions", true)
+					local panel = spline or outer or rounded
+					if panel then
+						local row = screen:FindFirstChild(if spline then "SplineJoin" elseif rounded then "RoundedJoin" else "OuterTouch", true)
+						t.expect(row.LayoutOrder).toBe(
+							if spline then 7 elseif rounded then 5 else 1
+						)
+						t.expect(panel.Position.X.Offset).toBe(20)
+						local outline = row.Outline
+						t.expect(outline.Stroke.Color).toBe(Color3.new(1, 1, 1))
+						t.expect(outline.BackgroundTransparency).toBe(1)
+					end
+					if outer then
+						local label = outer.Content.AcuteWedgeJoin:FindFirstChild("Label", true)
+						t.expect(label.TextWrapped).toBe(true)
+						-- The label must wrap rather than push the checkbox out of the panel
+						local checkBox = outer.Content.AcuteWedgeJoin:FindFirstChild("CheckBox", true)
+						t.expect(
+							checkBox.AbsolutePosition.X + checkBox.AbsoluteSize.X <= outer.AbsolutePosition.X + outer.AbsoluteSize.X
+						).toBe(true)
+					end
+					if spline then
+						local preview = screen:FindFirstChild("SplineJoin", true):FindFirstChild("Filler", true)
+						t.expect(preview:IsA("Model")).toBe(true)
+						t.expect(preview:FindFirstChildWhichIsA("BasePart") ~= nil).toBe(true)
+						t.expect(spline.Content:FindFirstChild("AutomaticSegments") == nil).toBe(true)
+						local segments = spline.Content.Segments:FindFirstChild("TextBox", true)
+						t.expect(segments.Text:find("Automatic", 1, true) ~= nil).toBe(true)
+						t.expect(panel.BackgroundColor3).toBe(Color3.fromRGB(18, 18, 18))
+						local textbox = spline.Content.Padding:FindFirstChild("TextBox", true)
+						t.expect(textbox.Text:find("studs", 1, true) ~= nil).toBe(true)
+					end
+				end,
+			})
+		end
+	end)
+
+	t.test("Classic UI offers only the original modes, without sub-options", function()
+		for _, mode in { "OuterTouch", "InnerTouch", "RoundedJoin", "SplineJoin" } do
+			renderGui({
+				ClassicUI = true,
+				ResizeMode = mode,
+				HaveHelp = true,
+				Check = function(screen)
+					local panel = screen:FindFirstChild("ClassicResizeMethod", true)
+					for _, name in { "OuterTouch", "InnerTouch", "RoundedJoin", "ButtJoint", "ExtendUpTo", "ExtendInto" } do
+						t.expect(panel:FindFirstChild(name, true) ~= nil).toBe(true)
+					end
+					for _, name in { "WedgeJoin", "SplineJoin" } do
+						t.expect(panel:FindFirstChild(name, true)).toBe(nil)
+					end
+					for _, name in { "OuterTouchOptions", "RoundedJoinOptions", "SplineJoinOptions" } do
+						t.expect(screen:FindFirstChild(name, true)).toBe(nil)
+					end
+				end,
+			})
 		end
 	end)
 
 	t.test("Spline menu opens with the same outline and height as reselection", function()
-		for _, classic in { false, true } do
-			renderGui({
-				ClassicUI = classic,
-				ResizeMode = "SplineJoin",
-				HaveHelp = true,
-				Check = function(screen, settings, render)
-					local panel = screen:FindFirstChild("SplineJoinOptions", true)
-					local header = screen:FindFirstChild("SplineJoin", true)
-					local height = panel.AbsoluteSize.Y
-					t.expect(height > 0).toBe(true)
-					if not classic then
-						t.expect(header.Outline.ZIndex > header.ZIndex).toBe(true)
-						t.expect(header.Outline.AbsolutePosition.Y).toBe(header.AbsolutePosition.Y)
-					end
-					settings.ResizeMode = "InnerTouch"
-					render()
-					settings.ResizeMode = "SplineJoin"
-					render()
-					panel = screen:FindFirstChild("SplineJoinOptions", true)
-					header = screen:FindFirstChild("SplineJoin", true)
-					t.expect(panel.AbsoluteSize.Y).toBe(height)
-					if not classic then
-						t.expect(header.Outline.AbsolutePosition.Y).toBe(header.AbsolutePosition.Y)
-					end
-					settings.SplineJoin.AdvancedPadding = true
-					render()
-					t.expect(panel.AbsoluteSize.Y).toBe(height)
-					settings.SplineJoin.Segments = 12
-					render()
-					t.expect(panel.AbsoluteSize.Y).toBe(height)
-					local content = panel.Content
-					local segments = content.Segments
-					local segmentLabel = segments:FindFirstChild("Label", true)
-					local segmentTextBox = segments:FindFirstChild("TextBox", true)
-					local secondTextBox = content.Padding:FindFirstChild("Second", true).Input.TextBox
-					t.expect(segmentLabel.TextXAlignment).toBe(Enum.TextXAlignment.Left)
-					t.expect(segmentTextBox.AbsoluteSize.X).toBe(secondTextBox.AbsoluteSize.X)
-					t.expect(segmentTextBox.AbsolutePosition.X).toBe(secondTextBox.AbsolutePosition.X)
-					t.expect(segmentTextBox.AbsolutePosition.X > segmentLabel.AbsolutePosition.X + segmentLabel.AbsoluteSize.X).toBe(true)
-				end,
-			})
-		end
+		renderGui({
+			ResizeMode = "SplineJoin",
+			HaveHelp = true,
+			Check = function(screen, settings, render)
+				local panel = screen:FindFirstChild("SplineJoinOptions", true)
+				local header = screen:FindFirstChild("SplineJoin", true)
+				local height = panel.AbsoluteSize.Y
+				t.expect(height > 0).toBe(true)
+				t.expect(header.Outline.ZIndex > header.ZIndex).toBe(true)
+				t.expect(header.Outline.AbsolutePosition.Y).toBe(header.AbsolutePosition.Y)
+				settings.ResizeMode = "InnerTouch"
+				render()
+				settings.ResizeMode = "SplineJoin"
+				render()
+				panel = screen:FindFirstChild("SplineJoinOptions", true)
+				header = screen:FindFirstChild("SplineJoin", true)
+				t.expect(panel.AbsoluteSize.Y).toBe(height)
+				t.expect(header.Outline.AbsolutePosition.Y).toBe(header.AbsolutePosition.Y)
+				settings.SplineJoin.AdvancedPadding = true
+				render()
+				t.expect(panel.AbsoluteSize.Y).toBe(height)
+				settings.SplineJoin.Segments = 12
+				render()
+				t.expect(panel.AbsoluteSize.Y).toBe(height)
+				local content = panel.Content
+				local segments = content.Segments
+				local segmentLabel = segments:FindFirstChild("Label", true)
+				local segmentTextBox = segments:FindFirstChild("TextBox", true)
+				local secondTextBox = content.Padding:FindFirstChild("Second", true).Input.TextBox
+				t.expect(segmentLabel.TextXAlignment).toBe(Enum.TextXAlignment.Left)
+				t.expect(segmentTextBox.AbsoluteSize.X).toBe(secondTextBox.AbsoluteSize.X)
+				t.expect(segmentTextBox.AbsolutePosition.X).toBe(secondTextBox.AbsolutePosition.X)
+				t.expect(segmentTextBox.AbsolutePosition.X > segmentLabel.AbsolutePosition.X + segmentLabel.AbsoluteSize.X).toBe(true)
+			end,
+		})
 	end)
 
 	t.test("Spline segments input shows Automatic for zero", function()
@@ -202,20 +210,20 @@ return function(t: TestContext)
 				ResizeMode = "RoundedJoin",
 				Check = function(screen, settings, render)
 					local menu = screen:FindFirstChild("RoundedJoinOptions", true)
-					t.expect(menu ~= nil).toBe(true)
+					t.expect(menu ~= nil).toBe(not classic)
 					for _, cylinder in { false, true, false } do
 						settings.UseCylinderForRoundedJoin = cylinder
 						render()
 						local row = screen:FindFirstChild("RoundedJoin", true)
-						local chips = screen:FindFirstChild("RoundedJoinOptions", true).Content.FillerType
-						t.expect(chips:FindFirstChild("Cylinder", true).Font == Enum.Font.SourceSansBold).toBe(cylinder)
-						t.expect(chips:FindFirstChild("Spline", true).Font == Enum.Font.SourceSansBold).toBe(not cylinder)
 						if classic then
 							local icon = row:FindFirstChild("Icon", true)
 							t.expect(icon:IsA("ImageLabel")).toBe(true)
 							t.expect(icon.Image).toBe("rbxassetid://9834555074")
 							continue
 						end
+						local chips = screen:FindFirstChild("RoundedJoinOptions", true).Content.FillerType
+						t.expect(chips:FindFirstChild("Cylinder", true).Font == Enum.Font.SourceSansBold).toBe(cylinder)
+						t.expect(chips:FindFirstChild("Spline", true).Font == Enum.Font.SourceSansBold).toBe(not cylinder)
 						local filler = row:FindFirstChild("Filler", true)
 						t.expect(filler:IsA("Part")).toBe(cylinder)
 						if cylinder then
