@@ -604,7 +604,6 @@ local function IconOperationButton(props: {
 })
 	local fullText = string.format('%s\n<i><font size="12" color="#AAA">%s</font></i>', props.Text, props.SubText)
 	return e("Frame", {
-		ZIndex = 2,
 		Size = UDim2.new(1, 0, 0, 32),
 		BackgroundTransparency = 1,
 		LayoutOrder = props.LayoutOrder,
@@ -612,10 +611,10 @@ local function IconOperationButton(props: {
 		Layout = e("UIListLayout", {
 			FillDirection = Enum.FillDirection.Horizontal,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, 0),
+			Padding = UDim.new(0, 4),
 		}),
 		Button = e("Frame", {
-			Size = UDim2.new(1, -64, 0, 32),
+			Size = UDim2.new(1, -68, 0, 32),
 			BackgroundTransparency = 1,
 			LayoutOrder = 1,
 		}, {
@@ -625,7 +624,6 @@ local function IconOperationButton(props: {
 				Disabled = false,
 				Height = 32,
 				OnClick = props.OnClick,
-				JoinedRight = true,
 			}),
 		}),
 		Icon = e("ImageLabel", {
@@ -633,13 +631,6 @@ local function IconOperationButton(props: {
 			BackgroundTransparency = 1,
 			Image = props.Icon,
 			LayoutOrder = 2,
-		}, {
-			Corner = e("UICorner", {
-				TopLeftRadius = UDim.new(),
-				BottomLeftRadius = UDim.new(),
-				TopRightRadius = UDim.new(0, 4),
-				BottomRightRadius = UDim.new(0, 4),
-			}),
 		}),
 	})
 end

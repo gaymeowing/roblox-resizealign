@@ -15,12 +15,11 @@ local function OperationButton(props: {
 	Color: Color3,
 	LayoutOrder: number?,
 	OnClick: () -> (),
-	JoinedRight: boolean?,
-	OpenBelow: boolean?,
 })
-	local text = if props.SubText
-		then string.format('%s\n<i><font size="12" color="#FFF">%s</font></i>', props.Text, props.SubText)
-		else props.Text
+	local text = if props.SubText then
+		string.format('%s\n<i><font size="12" color="#FFF">%s</font></i>', props.Text, props.SubText)
+	else
+		props.Text
 	local color = if props.Disabled then props.Color:Lerp(Colors.DISABLED_GREY, 0.5) else props.Color
 
 	return e("TextButton", {
@@ -36,10 +35,7 @@ local function OperationButton(props: {
 		[React.Event.MouseButton1Click] = if props.Disabled then nil else props.OnClick,
 	}, {
 		Corner = e("UICorner", {
-			TopLeftRadius = UDim.new(0, 4),
-			TopRightRadius = UDim.new(0, if props.JoinedRight then 0 else 4),
-			BottomLeftRadius = UDim.new(0, if props.OpenBelow then 0 else 4),
-			BottomRightRadius = UDim.new(0, if props.JoinedRight or props.OpenBelow then 0 else 4),
+			CornerRadius = UDim.new(0, 4),
 		}),
 	})
 end
