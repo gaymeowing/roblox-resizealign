@@ -343,9 +343,14 @@ local function checkExpectedParts(actual: { BasePart }, expected: { Segment })
 				continue
 			end
 			local relative = wanted.CFrame:ToObjectSpace(part.CFrame)
-			local _, angle = relative:ToAxisAngle()
+			-- Compare the basis vectors rather than ToAxisAngle: the angle of a
+			-- near-identity rotation is only accurate to about 3e-4 in float32
+			local rotationError = math.max(
+				vector.magnitude(CAST_VECTOR(relative.XVector) - X_AXIS),
+				vector.magnitude(CAST_VECTOR(relative.YVector) - Y_AXIS)
+			)
 			if vector.magnitude(CAST_VECTOR(relative.Position)) < 0.0001
-				and math.abs(angle) < 0.0001
+				and rotationError < 0.0001
 				and vector.magnitude(CAST_VECTOR(part.Size) - wanted.Size) < 0.0001
 			then
 				matched[i] = true
@@ -468,14 +473,27 @@ return function(t: TestContext)
 
 				local options = table.clone(Settings.DefaultSplineJoinOptions)
 				options.Segments = 12
+				local targetRotation = target.CFrame.Rotation
 				doExtend(first, last, "SplineJoin", nil, options)
+
+				-- A plain target selected first matches the template, so it is
+				-- extended to absorb the first segment rather than gaining a clone.
+				local absorbed = reverse
+					and vector.dot(CAST_VECTOR(target.Size), fixture.Axis) > vector.dot(fixture.Profile, fixture.Axis) + 0.001
+				if absorbed then
+					t.expect(target.CFrame.Rotation).toBe(targetRotation)
+					near(
+						CAST_VECTOR(target.Size) * (vector.one - fixture.Axis),
+						fixture.Profile * (vector.one - fixture.Axis)
+					)
+				end
 
 				targetFace = target.CFrame
 					* CFrame_fromVector(normalFromId(fixture.TargetFace) * CAST_VECTOR(target.Size) / 2)
 
 				local faceFrames = { fixture.Frame, targetFace }
 				for _, frame in faceFrames do
-					local found = false
+					local found = absorbed and frame == targetFace
 					for _, part in folder:GetChildren() do
 						if part ~= slope and part ~= target then
 							local direction = CFrame_VectorToWorldSpace(part.CFrame, fixture.Axis)
