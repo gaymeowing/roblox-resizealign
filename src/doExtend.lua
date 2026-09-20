@@ -297,8 +297,6 @@ local function fillJoint(
 	copyPartProps(faceB.Object, cyl)
 	if ShapeUtils.isCylinder(faceA.Object) and ShapeUtils.isCylinder(faceB.Object) then
 		cyl.Shape = Enum.PartType.Ball
-		-- A ball is as long as it is wide
-		length = math.max(length, 2 * radius)
 	else
 		cyl.Shape = Enum.PartType.Cylinder
 	end
@@ -632,6 +630,9 @@ local function doExtend(
 	-- filler is the default, so only an explicit false picks the spline.
 	local isCylinderPair = ShapeUtils.isCylinder(faceA.Object) and ShapeUtils.isCylinder(faceB.Object)
 	local useSplineFiller = useCylinderForRoundedJoin == false and not isCylinderPair
+	-- The sphere between two cylinders has to match their radius, so the
+	-- radius option does not apply to it
+	local minFillerRadius = if isCylinderPair then 0 else roundedJoinRadius or 0
 
 	local extendPointA, extendPointB
 	local roundedRadius: number? = nil
@@ -660,7 +661,7 @@ local function doExtend(
 		-- outer surface of each part cross, making it tangent to both surfaces.
 		-- The spline filler measures its own radius back from where the
 		-- center lines cross, so it keeps the automatic radius here.
-		local fillerRadius = if useSplineFiller then radiusA else math.max(radiusA, roundedJoinRadius or 0)
+		local fillerRadius = if useSplineFiller then radiusA else math.max(radiusA, minFillerRadius)
 		if fillerRadius > radiusA then
 			local outerPointA = getPositivePointToFace(faceB, pointsA)
 			local onAxisA = extendPointA + fillAxis * (outerPointA - extendPointA):Dot(fillAxis)
@@ -819,7 +820,7 @@ local function doExtend(
 			pointsB,
 			dirA * lenA,
 			dirB * lenB,
-			roundedJoinRadius or 0
+			minFillerRadius
 		)
 	end
 

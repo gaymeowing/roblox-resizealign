@@ -1106,7 +1106,9 @@ return function(t: TestContext)
 	-- RoundedJoin with cylinders
 	--------------------------------------------------------------------------------
 
-	t.test("RoundedJoin: cylinder parts are joined with a sphere for either filler option", function()
+	t.test("RoundedJoin: cylinder parts are joined with a sphere, ignoring the filler and radius options", function()
+		-- Every combination has to give the same result as the first
+		local sphereCenter, sizeA, sizeB
 		for _, radius in { 0, 3 } do
 			for _, useCylinder in { true, false } do
 				local folder = Instance.new("Folder")
@@ -1139,9 +1141,14 @@ return function(t: TestContext)
 				end
 				t.expect(#fillers).toBe(1)
 				t.expect(fillers[1].Shape).toBe(Enum.PartType.Ball)
-				-- A ball stays round when the radius option makes it larger
-				local diameter = if radius == 0 then 2 else 2 * radius
-				t.expect(fillers[1].Size:FuzzyEq(Vector3.one * diameter, 0.0001)).toBe(true)
+				sphereCenter = sphereCenter or fillers[1].Position
+				sizeA = sizeA or partA.Size
+				sizeB = sizeB or partB.Size
+				-- The sphere matches the cylinders, whatever the radius option says
+				t.expect(fillers[1].Size:FuzzyEq(Vector3.new(2, 2, 2), 0.0001)).toBe(true)
+				t.expect(fillers[1].Position:FuzzyEq(sphereCenter, 0.0001)).toBe(true)
+				t.expect(partA.Size:FuzzyEq(sizeA, 0.0001)).toBe(true)
+				t.expect(partB.Size:FuzzyEq(sizeB, 0.0001)).toBe(true)
 
 				folder:Destroy()
 			end
