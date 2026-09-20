@@ -534,6 +534,12 @@ local function SelectionBehaviorPanel(props: {
 	})
 end
 
+local MODES_WITHOUT_CLASSIC_UI: { [Settings.ResizeMode]: boolean } = {
+	WedgeJoin = true,
+	RoundedJoin = true,
+	SplineJoin = true,
+}
+
 local function OptionsPanel(props: {
 	Settings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
@@ -882,7 +888,9 @@ local function ModernContent(props: {
 			UpdatedSettings = props.UpdatedSettings,
 			LayoutOrder = nextOrder(),
 		}),
-		OptionsPanel = e(OptionsPanel, {
+		-- The classic UI is only offered for the modes the original plugin had.
+		-- It is the panel's only option, so the whole panel goes with it.
+		OptionsPanel = not MODES_WITHOUT_CLASSIC_UI[currentSettings.ResizeMode] and e(OptionsPanel, {
 			Settings = currentSettings,
 			UpdatedSettings = props.UpdatedSettings,
 			LayoutOrder = nextOrder(),

@@ -237,6 +237,35 @@ return function(t: TestContext)
 		end
 	end)
 
+	t.test("Classic UI style option is hidden while a new mode is selected", function()
+		renderGui({
+			Check = function(screen, settings, render)
+				local hiddenModes = { WedgeJoin = true, RoundedJoin = true, SplineJoin = true }
+				local modes = {
+					"OuterTouch",
+					"InnerTouch",
+					"WedgeJoin",
+					"RoundedJoin",
+					"SplineJoin",
+					"ButtJoint",
+					"ExtendUpTo",
+					"ExtendInto",
+				}
+				for _, mode in modes do
+					settings.ResizeMode = mode
+					render()
+					t.expect(screen:FindFirstChild("ClassicUI", true) == nil).toBe(hiddenModes[mode] == true)
+					t.expect(screen:FindFirstChild("OptionsPanel", true) == nil).toBe(hiddenModes[mode] == true)
+				end
+				-- Someone already in the classic UI can always switch back
+				settings.ClassicUI = true
+				settings.ResizeMode = "RoundedJoin"
+				render()
+				t.expect(screen:FindFirstChild("ReturnToNewUI", true) ~= nil).toBe(true)
+			end,
+		})
+	end)
+
 	t.test("Modern UI smoke", function()
 		renderGui({ ClassicUI = false })
 	end)
