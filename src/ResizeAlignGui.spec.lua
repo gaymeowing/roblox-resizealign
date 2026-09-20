@@ -204,6 +204,24 @@ return function(t: TestContext)
 		})
 	end)
 
+	t.test("Automatic labels fit their text boxes as soon as a menu opens", function()
+		local menus = { SplineJoin = "Segments", RoundedJoin = "Radius" }
+		for mode, option in menus do
+			renderGui({
+				ResizeMode = mode,
+				HaveHelp = true,
+				Check = function(screen)
+					-- No re-render here: the first render has to get it right by itself
+					task.wait(0.1)
+					local textBox = screen:FindFirstChild(mode .. "Options", true).Content[option]:FindFirstChild("TextBox", true)
+					t.expect(textBox.Text:find("Automatic", 1, true) ~= nil).toBe(true)
+					t.expect(textBox.TextFits).toBe(true)
+					t.expect(textBox.TextBounds.X <= textBox.AbsoluteSize.X).toBe(true)
+				end,
+			})
+		end
+	end)
+
 	t.test("Rounded Join menu switches between segmented and original cylinder previews", function()
 		for _, classic in { false, true } do
 			renderGui({

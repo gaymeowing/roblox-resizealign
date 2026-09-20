@@ -32,7 +32,9 @@ local function NumberInput(props: {
 	local unitText = if props.Unit and not showZeroLabel then props.Unit else ""
 	local displayText = string.format('<b>%s</b><font size="14">%s</font>', valueText, unitText)
 
-	local textBoxRef = React.useRef(nil)
+	-- Tracked as state so that we re-render once layout gives the box its width,
+	-- which isn't known yet on the first render
+	local measuredWidth, setMeasuredWidth = React.useState(nil :: number?)
 	local numberPartLength = TextService:GetTextSize(valueText, 20, Enum.Font.RobotoMono, Vector2.new(1000, 1000)).X
 	local unitPartLength = TextService:GetTextSize(
 		unitText,
@@ -41,7 +43,7 @@ local function NumberInput(props: {
 		Vector2.new(1000, 1000)
 	).X
 	local displayTextSize = numberPartLength + unitPartLength
-	local textFitsAtNormalSize = not textBoxRef.current or textBoxRef.current.AbsoluteSize.X >= displayTextSize + 4
+	local textFitsAtNormalSize = measuredWidth ~= nil and measuredWidth >= displayTextSize + 4
 
 	local onFocusLost = React.useCallback(function(object: TextBox, enterPressed: boolean)
 		local newValue = interpretNumberInput(object.Text, props.EmptyAsZero, props.ZeroLabel)
@@ -117,8 +119,14 @@ local function NumberInput(props: {
 					object.SelectionStart = 1
 				end
 			end,
-			ref = textBoxRef,
+			[React.Change.AbsoluteSize] = function(object: TextBox)
+				setMeasuredWidth(object.AbsoluteSize.X)
+			end,
 		}, {
+			-- Scaled text fills the box's height when it has room to, so cap it
+			SizeLimit = not textFitsAtNormalSize and e("UITextSizeConstraint", {
+				MaxTextSize = 20,
+			}),
 			Corner = e("UICorner", {
 				CornerRadius = UDim.new(0, 4),
 			}),
