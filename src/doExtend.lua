@@ -608,6 +608,11 @@ local function doExtend(
 		return
 	end
 
+	-- Two cylinders always get the sphere filler from fillJoint. The cylinder
+	-- filler is the default, so only an explicit false picks the spline.
+	local isCylinderPair = ShapeUtils.isCylinder(faceA.Object) and ShapeUtils.isCylinder(faceB.Object)
+	local useSplineFiller = useCylinderForRoundedJoin == false and not isCylinderPair
+
 	local extendPointA, extendPointB
 	local roundedRadius: number? = nil
 	if
@@ -630,12 +635,23 @@ local function doExtend(
 			radiusA = math.max(radiusA, (point - projPoint).Magnitude)
 		end
 		roundedRadius = radiusA
+
+		-- The filler is centered where lines running fillerRadius inside the
+		-- outer surface of each part cross, making it tangent to both surfaces.
+		-- The spline filler measures its own radius back from where the
+		-- center lines cross, so it keeps the automatic radius here.
+		local fillerRadius = if useSplineFiller then radiusA else math.max(radiusA, roundedJoinRadius or 0)
+		if fillerRadius > radiusA then
+			local outerPointA = getPositivePointToFace(faceB, pointsA)
+			local onAxisA = extendPointA + fillAxis * (outerPointA - extendPointA):Dot(fillAxis)
+			extendPointA += (onAxisA - outerPointA).Unit * (fillerRadius - radiusA)
+		end
 		local centerPointB = getBasis(faceB)
 		extendPointB = getPositivePointToFace(faceA, pointsB)
 		local proj = (extendPointB - centerPointB):Dot(fillAxis)
 		local projPoint = centerPointB + fillAxis * proj
 		local distanceToAxis = (extendPointB - projPoint).Magnitude
-		local frac = radiusA / distanceToAxis
+		local frac = fillerRadius / distanceToAxis
 		extendPointB = extendPointB:Lerp(projPoint, frac)
 	else
 		error("unreachable")
@@ -743,10 +759,7 @@ local function doExtend(
 		end
 	end
 
-	-- Two cylinders always get the sphere filler from fillJoint
-	local isCylinderPair = ShapeUtils.isCylinder(faceA.Object) and ShapeUtils.isCylinder(faceB.Object)
-	-- The cylinder filler is the default, so only an explicit false picks the spline
-	if roundedRadius and useCylinderForRoundedJoin == false and not isCylinderPair then
+	if roundedRadius and useSplineFiller then
 		-- Preserve Rounded Join's original intersection and filler radius.
 		-- For a fillet of radius R, the tangent points sit R*tan(turn/2)
 		-- back from that intersection along each of the two source parts.

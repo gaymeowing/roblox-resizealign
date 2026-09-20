@@ -897,23 +897,72 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("RoundedJoin: radius widens the cylinder filler without moving the endpoints", function()
+	t.test("RoundedJoin: radius insets the cylinder filler to stay tangent to both parts", function()
 		-- Below the automatic radius of 1 the filler would not cover the gap
 		local cases = { { Radius = 2.5, Expected = 2.5 }, { Radius = 0.5, Expected = 1 } }
 		for _, case in cases do
 			withParts(function(folder, a, b, faceA, faceB)
 				doExtend(faceA, faceB, "RoundedJoin", false, nil, true, case.Radius)
-				near(CAST_VECTOR(a.Size), vector.create(14, 2, 3))
-				near(CAST_VECTOR(b.Size), vector.create(2, 14, 3))
+				-- The outer surfaces are y = -1 on the first part and x = 11 on
+				-- the second, and both parts end level with the filler's center
+				local radius = case.Expected
+				local center = vector.create(11 - radius, -1 + radius, 0)
+				near(CAST_VECTOR(a.Size), vector.create(center.x + 4, 2, 3))
+				near(CAST_VECTOR(b.Size), vector.create(2, 14 - center.y, 3))
+				near(CAST_VECTOR(a.Position), vector.create((center.x - 4) / 2, 0, 0))
+				near(CAST_VECTOR(b.Position), vector.create(10, (14 + center.y) / 2, 0))
 				t.expect(#folder:GetChildren()).toBe(3)
 				for _, part in folder:GetChildren() do
 					if part ~= a and part ~= b then
 						t.expect(part.Shape).toBe(Enum.PartType.Cylinder)
-						near(CAST_VECTOR(part.Position), vector.create(10, 0, 0))
-						near(CAST_VECTOR(part.Size), vector.create(3, 2 * case.Expected, 2 * case.Expected))
+						near(CAST_VECTOR(part.Position), center)
+						near(CAST_VECTOR(part.Size), vector.create(3, 2 * radius, 2 * radius))
 					end
 				end
 			end)
+		end
+	end)
+
+	t.test("RoundedJoin: a larger cylinder filler is tangent to angled parts", function()
+		local radius = 3
+		for _, angle in { 30, 60, 120 } do
+			local folder = createFolder()
+			local a = createPart(vector.create(8, 2, 3), CFrame.new(-4, 0, 0), folder)
+			local b = createPart(
+				vector.create(8, 1, 3),
+				CFrame.new(12, 0, 0) * CFrame.Angles(0, 0, math.rad(angle)) * CFrame.new(10, 0, 0),
+				folder
+			)
+			doExtend(
+				{ Object = a, Normal = Enum.NormalId.Right },
+				{ Object = b, Normal = Enum.NormalId.Left },
+				"RoundedJoin",
+				false,
+				nil,
+				true,
+				radius
+			)
+			t.expect(#folder:GetChildren()).toBe(3)
+			local filler
+			for _, part in folder:GetChildren() do
+				if part ~= a and part ~= b then
+					filler = part
+				end
+			end
+			near(CAST_VECTOR(filler.Size), vector.create(3, 2 * radius, 2 * radius))
+			for _, part in { a, b } do
+				local center = CFrame_PointToObjectSpace(part.CFrame, CAST_VECTOR(filler.Position))
+				local size = CAST_VECTOR(part.Size)
+				-- The joined face passes through the filler's center...
+				assert(math.abs(math.abs(center.x) - size.x / 2) < 0.0001, `{angle}: the part does not end at the filler`)
+				-- ...and one side surface sits exactly a radius away from it
+				local surfaceError = math.min(
+					math.abs(math.abs(center.y - size.y / 2) - radius),
+					math.abs(math.abs(center.y + size.y / 2) - radius)
+				)
+				assert(surfaceError < 0.0001, `{angle}: the filler is not tangent, off by {surfaceError}`)
+			end
+			folder:Destroy()
 		end
 	end)
 
