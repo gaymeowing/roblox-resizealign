@@ -258,7 +258,7 @@ local function RoundedJoinOptions(props: {
 	return React.createElement(React.Fragment, nil, {
 		Radius = e(OptionEntry, {
 			LayoutOrder = 1,
-			HelpText = "Radius of the rounded filler. A larger radius makes a wider Cylinder, moved inwards to stay flush with the outside of both parts, or a more gradual Spline bend. Leave empty or enter \"automatic\" to use the radius the joined faces need, which is also the smallest radius that can be used. Joining two cylinders ignores this.",
+			HelpText = "Radius of the rounded outside of the join. A larger radius makes a wider Cylinder, moved inwards to stay flush with the outside of both parts, or a more gradual Spline bend. Leave empty or enter \"automatic\" to use the radius the joined faces need, which is also the smallest radius that can be used. Joining two cylinders ignores this.",
 			Content = e(NumberInput, {
 				Label = "Radius",
 				Value = props.Settings.RoundedJoinRadius,

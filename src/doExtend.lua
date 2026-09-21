@@ -712,7 +712,12 @@ local function doExtend(
 		-- For a fillet of radius R, the tangent points sit R*tan(turn/2)
 		-- back from that intersection along each of the two source parts.
 		local turn = math.acos(math.clamp(-dirA:Dot(dirB), -1, 1))
-		local setback = math.max(roundedRadius, roundedJoinRadius or 0) * math.tan(turn / 2)
+		-- The radius option measures the outside of the bend, as it does for
+		-- the cylinder filler, while the spline is planned along its center
+		-- line, which runs roundedRadius inside that. The automatic bend,
+		-- whose center line has that same radius, is the tightest allowed.
+		local centerRadius = math.max(roundedRadius, (roundedJoinRadius or 0) - roundedRadius)
+		local setback = centerRadius * math.tan(turn / 2)
 		local paddingA, paddingB = lenA - setback, lenB - setback
 		if paddingA <= -extendableA + 0.001 or paddingB <= -extendableB + 0.001 then
 			return

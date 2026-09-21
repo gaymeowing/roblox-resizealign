@@ -1067,21 +1067,48 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("RoundedJoin: radius sets the spline filler's bend radius", function()
-		local cases = { { Radius = 5, Expected = 5 }, { Radius = 0.5, Expected = 1 } }
+	t.test("RoundedJoin: radius sets the outer radius of the spline filler's bend", function()
+		-- Expected is the radius of the center line, which runs half of the
+		-- 2 stud thickness inside the outer surface. The automatic bend, with a
+		-- center radius of 1 and so an outer radius of 2, is the tightest.
+		local cases = {
+			{ Radius = 5, Expected = 4 },
+			{ Radius = 2.5, Expected = 1.5 },
+			{ Radius = 1.5, Expected = 1 },
+			{ Radius = 0, Expected = 1 },
+		}
 		for _, case in cases do
 			withParts(function(folder, a, b, faceA, faceB)
 				doExtend(faceA, faceB, "RoundedJoin", false, nil, false, case.Radius)
 				local radius = case.Expected
-				t.expect(CAST_VECTOR(a.Size).x >= 14 - radius).toBe(true)
+				near(CAST_VECTOR(a.Size), vector.create(14 - radius, 2, 3))
 				near(CAST_VECTOR(b.Size), vector.create(2, 14 - radius, 3))
 				local segments = { { CFrame = a.CFrame, Size = CAST_VECTOR(a.Size) } }
+				-- The bend turns about this point, and its outside is the part
+				-- of the clones that lies furthest from it
+				local turnCenter = vector.create(10 - radius, radius, 0)
+				local outerRadius = 0
 				for _, part in folder:GetChildren() do
 					if part ~= a and part ~= b then
 						table.insert(segments, { CFrame = part.CFrame, Size = CAST_VECTOR(part.Size) })
+						for _, x in SIGNS do
+							for _, y in SIGNS do
+								local corner = CFrame_PointToWorldSpace(
+									part.CFrame,
+									CAST_VECTOR(part.Size) * vector.create(x, y, 0) / 2
+								)
+								outerRadius = math.max(outerRadius, vector.magnitude(corner - turnCenter))
+							end
+						end
 					end
 				end
 				t.expect(#segments >= 9).toBe(true)
+				-- Corners of straight clones stand slightly proud of the true arc
+				local expectedOuter = math.max(case.Radius, 2)
+				assert(
+					outerRadius >= expectedOuter - 0.001 and outerRadius <= expectedOuter * 1.02,
+					`Radius {case.Radius} produced an outer radius of {outerRadius}`
+				)
 				checkPlan(
 					segments,
 					vector.create(10 - radius, 0, 0),
