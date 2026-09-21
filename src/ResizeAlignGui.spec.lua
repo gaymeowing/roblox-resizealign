@@ -212,6 +212,10 @@ return function(t: TestContext)
 					local textBox = screen:FindFirstChild(mode .. "Options", true).Content[option]:FindFirstChild("TextBox", true)
 					t.expect(textBox.Text:find("Automatic", 1, true) ~= nil).toBe(true)
 					t.expect(textBox.TextFits).toBe(true)
+					-- Centered text must not be padded on one side only
+					t.expect(textBox.Text:sub(1, 1) ~= " ").toBe(true)
+					local padding = textBox:FindFirstChildWhichIsA("UIPadding")
+					t.expect(padding == nil or padding.PaddingLeft == padding.PaddingRight).toBe(true)
 					t.expect(textBox.TextBounds.X <= textBox.AbsoluteSize.X).toBe(true)
 				end,
 			})

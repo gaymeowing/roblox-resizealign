@@ -101,7 +101,10 @@ local function NumberInput(props: {
 			}),
 		}),
 		TextBox = e("TextBox", {
-			Text = textFitsAtNormalSize and displayText or " " .. displayText,
+			-- Scaled text runs right up to the edges of the box. The space keeps
+			-- it off the chip color strip on the left, but without a strip it
+			-- would only push centered text off to the right.
+			Text = if not textFitsAtNormalSize and props.ChipColor then " " .. displayText else displayText,
 			TextColor3 = Colors.WHITE,
 			RichText = true,
 			BackgroundColor3 = Colors.GREY,
@@ -121,6 +124,10 @@ local function NumberInput(props: {
 			-- Scaled text fills the box's height when it has room to, so cap it
 			SizeLimit = not textFitsAtNormalSize and e("UITextSizeConstraint", {
 				MaxTextSize = 20,
+			}),
+			EdgePadding = not textFitsAtNormalSize and not props.ChipColor and e("UIPadding", {
+				PaddingLeft = UDim.new(0, 3),
+				PaddingRight = UDim.new(0, 3),
 			}),
 			Corner = e("UICorner", {
 				CornerRadius = UDim.new(0, 4),
