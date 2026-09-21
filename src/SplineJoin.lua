@@ -14,6 +14,7 @@ local DIRECTIONS: { vector } = {}
 local PARAMETERS: { number } = {}
 local MEASURES: { number } = {}
 local POINTS: { vector } = {}
+local INNER_JOINTS: { boolean } = {}
 
 -- type solver doesn't know that Vector3 and vector are the same
 local function CAST_VECTOR(vec: Vector3): vector
@@ -654,6 +655,30 @@ function SplineJoin.plan(
 		end
 	end
 
+	-- A joint is normally covered by lengthening its two parts until their
+	-- outside corners meet, which overlaps them on the inside of the bend. Inside
+	-- a wedge that overlap is only hidden when the slope faces into the bend.
+	-- Otherwise the neighbor's corner comes up through the slope, so those
+	-- joints are shortened until the inside corners meet instead. The gap that
+	-- leaves on the outside tapers away along with the wedge.
+	-- INNER_JOINTS[i] is the joint before part i; count + 1 is the last face.
+	local slopeNormal: vector? = nil
+	if ShapeUtils.isWedgeShape(template) and math.abs(localNormal.x) > 0.5 then
+		slopeNormal = vector.normalize(vector.create(0, size.z, -size.y))
+	end
+	for i = 1, count + 1 do
+		local inner = false
+		if slopeNormal then
+			local before = if i == 1 then startNormal else DIRECTIONS[i - 1]
+			local after = if i > count then -endNormal else DIRECTIONS[i]
+			-- The bend's inside is the way the direction turns
+			local turn = after - before
+			local rotation = parts[math.min(i, count)].CFrame
+			inner = vector.dot(turn, CFrame_VectorToWorldSpace(rotation, slopeNormal)) < -1e-6
+		end
+		INNER_JOINTS[i] = inner
+	end
+
 	do
 		local previousDirection = startNormal
 
@@ -663,12 +688,15 @@ function SplineJoin.plan(
 			local startPlane = if i == 1 then startNormal else previousDirection + direction
 			local endPlane = if i == count then -endNormal else direction + nextDirection
 			local offset = CFrame_VectorToWorldSpace(part.CFrame, guideOffset)
+			local startInner, endInner = INNER_JOINTS[i], INNER_JOINTS[i + 1]
 			local startReach = miterExtension(part.CFrame, halfSection, direction, startPlane)
+				* (if startInner then -1 else 1)
 				- vector.dot(offset, startPlane) / vector.dot(direction, startPlane)
 			local endReach = miterExtension(part.CFrame, halfSection, direction, endPlane)
+				* (if endInner then -1 else 1)
 				+ vector.dot(offset, endPlane) / vector.dot(direction, endPlane)
 
-			if not planar or hasEndpointRoll then
+			if (not planar or hasEndpointRoll) and not (startInner or endInner) then
 				if i > 1 then
 					local previous = parts[i - 1].CFrame
 					local previousOffset = CFrame_VectorToWorldSpace(previous, guideOffset)
@@ -696,7 +724,24 @@ function SplineJoin.plan(
 			local before: number
 			local after: number
 
-			if isTwistedSpatial then
+			if INNER_JOINTS[i] or INNER_JOINTS[i + 1] then
+				-- Both parts give way at an inner joint, so neither owns it
+				local chordLength = vector.dot(CAST_VECTOR(part.Size), dimension)
+				before = START_REACHES[i]
+				after = END_REACHES[i]
+				if not INNER_JOINTS[i] then
+					before = math.max(before, 0)
+				end
+				if not INNER_JOINTS[i + 1] then
+					after = math.max(after, 0)
+				end
+				-- A bend tighter than the wedge is wide cannot be inner joined
+				local shortfall = 0.001 - (chordLength + before + after)
+				if shortfall > 0 then
+					before += shortfall / 2
+					after += shortfall / 2
+				end
+			elseif isTwistedSpatial then
 				-- Whichever neighbor needs less reach owns this joint. Ties go
 				-- to the follower, except at the first joint: extending segment
 				-- two backward can cross the selected front face. The end

@@ -1534,6 +1534,56 @@ return function(t: TestContext)
 		t.expect(counts[2] <= 9).toBe(true)
 	end)
 
+	t.test("SplineJoin: wedges meet along their thick edge whichever way they bend", function()
+		local size = vector.create(6, 2, 3)
+		local template = Instance.new("WedgePart")
+		template.Size = CAST_VECTOR3(size)
+
+		-- A wedge is thickest at its back, local +Z. Bending toward +Z puts that
+		-- side inside the curve, where overlapping neighbors would come up
+		-- through each other's slopes.
+		for _, side in SIGNS do
+			local segments = assert(
+				SplineJoin.plan(template, CFrame.identity, vector.create(10, 0, 10 * side), -Z_AXIS * side, X_AXIS, 8)
+			)
+			t.expect(#segments).toBe(8)
+
+			local function corner(segment: Segment, along: number, z: number): vector
+				return CFrame_PointToWorldSpace(
+					segment.CFrame,
+					vector.create(along * segment.Size.x / 2, 0, z * segment.Size.z / 2)
+				)
+			end
+
+			-- The thick edges meet at every joint, and touch the planes of both
+			-- selected faces beside those faces' own thick edges. (A tilted
+			-- wedge spans slightly more of the plane than the face does.)
+			local first = corner(segments[1], -1, 1)
+			local last = corner(segments[8], 1, 1)
+			assert(math.abs(first.x) < 0.0001, "The first wedge's thick edge does not touch the first face")
+			assert(math.abs(first.z - size.z / 2) < 0.05, "The first wedge is not beside the first face")
+			assert(math.abs(last.z - 10 * side) < 0.0001, "The last wedge's thick edge does not touch the second face")
+			assert(math.abs(last.x - (10 - side * size.z / 2)) < 0.05, "The last wedge is not beside the second face")
+			for i = 1, 7 do
+				near(corner(segments[i], 1, 1), corner(segments[i + 1], -1, 1))
+
+				-- The thin edges overlap outside the bend, and part inside it
+				local direction = CFrame_VectorToWorldSpace(segments[i].CFrame, X_AXIS)
+				local thinGap = vector.dot(corner(segments[i + 1], -1, -1) - corner(segments[i], 1, -1), direction)
+				if side == 1 then
+					assert(thinGap > 0.01, "Wedges with their thick side inside the bend must not overlap")
+				else
+					assert(thinGap < -0.01, "Wedges with their thick side outside the bend must still overlap")
+				end
+			end
+
+			for _, segment in segments do
+				near(segment.Size * vector.create(0, 1, 1), size * vector.create(0, 1, 1))
+				t.expect(segment.ClassName).toBe("WedgePart")
+			end
+		end
+	end)
+
 	t.test("SplineJoin: all six template faces keep their cross sections", function()
 		local size = vector.create(4, 2, 3)
 		local template = createPart(size)
