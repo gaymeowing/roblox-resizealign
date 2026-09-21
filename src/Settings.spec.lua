@@ -25,59 +25,23 @@ return function(t: TestContext)
 		end)
 	end)
 
-	t.test("SplineJoin options default and round-trip independently", function()
+	t.test("SplineJoin segments default to automatic and round-trip", function()
 		withoutSavedSettings(function()
 			local settings = Settings.Load(t.plugin)
-			local saved = table.clone(settings.SplineJoin)
-			t.expect(settings.SplineJoin.Segments).toBe(0)
-			settings.SplineJoin = {
-				Segments = 24,
-			}
+			t.expect(settings.SplineJoinSegments).toBe(0)
+			settings.SplineJoinSegments = 24
 			Settings.Save(t.plugin, settings)
-			local reloaded = Settings.Load(t.plugin)
-			t.expect(reloaded.SplineJoin).toEqual(settings.SplineJoin)
-			reloaded.SplineJoin.Segments = 3
-			t.expect(settings.SplineJoin.Segments).toBe(24)
-			settings.SplineJoin = saved
-			Settings.Save(t.plugin, settings)
+			t.expect(Settings.Load(t.plugin).SplineJoinSegments).toBe(24)
 		end)
 	end)
 
-	t.test("SplineJoin migrates saved ArcJoin settings", function()
-		local previous = Settings.Load(t.plugin)
-		t.plugin:SetSetting("resizeAlignState", {
-			ResizeMode = "ArcJoin",
-			ArcJoin = {
-				AutomaticSegments = false,
-				Segments = 24,
-				Padding = 0.5,
-				AdvancedPadding = true,
-				PaddingA = 1,
-				PaddingB = 2,
-			},
-		})
-		local settings = Settings.Load(t.plugin)
-		t.expect(settings.ResizeMode).toBe("SplineJoin")
-		t.expect(settings.SplineJoin.AutomaticSegments).toBe(nil)
-		t.expect(settings.SplineJoin.Segments).toBe(24)
-		-- Padding was removed, and options that no longer exist are dropped
-		t.expect(settings.SplineJoin.Padding).toBe(nil)
-		t.expect(settings.SplineJoin.AdvancedPadding).toBe(nil)
-		Settings.Save(t.plugin, previous)
-	end)
-
-	t.test("SplineJoin migrates the AutomaticSegments checkbox to zero segments", function()
-		local previous = Settings.Load(t.plugin)
-		t.plugin:SetSetting("resizeAlignState", {
-			SplineJoin = {
-				AutomaticSegments = true,
-				Segments = 12,
-			},
-		})
-		local settings = Settings.Load(t.plugin)
-		t.expect(settings.SplineJoin.AutomaticSegments).toBe(nil)
-		t.expect(settings.SplineJoin.Segments).toBe(0)
-		Settings.Save(t.plugin, previous)
+	t.test("Settings are a flat table of plain values", function()
+		withoutSavedSettings(function()
+			Settings.Save(t.plugin, Settings.Load(t.plugin))
+			for key, value in t.plugin:GetSetting("resizeAlignState") do
+				t.expect(typeof(value) ~= "table").toBe(true)
+			end
+		end)
 	end)
 
 	t.test("Save and Load round-trips", function()

@@ -23,7 +23,7 @@ local function makeTestSettings()
 		AcuteWedgeJoin = true,
 		UseCylinderForRoundedJoin = true,
 		RoundedJoinRadius = 0,
-		SplineJoin = table.clone(require(script.Parent.Settings).DefaultSplineJoinOptions),
+		SplineJoinSegments = 0,
 		SelectionThreshold = "25",
 		ClassicUI = false,
 	}
@@ -168,7 +168,7 @@ return function(t: TestContext)
 				header = screen:FindFirstChild("SplineJoin", true)
 				t.expect(panel.AbsoluteSize.Y).toBe(height)
 				t.expect(header.Outline.AbsolutePosition.Y).toBe(header.AbsolutePosition.Y)
-				settings.SplineJoin.Segments = 12
+				settings.SplineJoinSegments = 12
 				render()
 				t.expect(panel.AbsoluteSize.Y).toBe(height)
 				local content = panel.Content
@@ -188,9 +188,9 @@ return function(t: TestContext)
 				local function textBox(): TextBox
 					return screen:FindFirstChild("SplineJoinOptions", true).Content.Segments:FindFirstChild("TextBox", true)
 				end
-				t.expect(settings.SplineJoin.Segments).toBe(0)
+				t.expect(settings.SplineJoinSegments).toBe(0)
 				t.expect(textBox().Text:find("Automatic", 1, true) ~= nil).toBe(true)
-				settings.SplineJoin.Segments = 12
+				settings.SplineJoinSegments = 12
 				render()
 				t.expect(textBox().Text:find("Automatic", 1, true)).toBe(nil)
 				t.expect(textBox().Text:find("12", 1, true) ~= nil).toBe(true)

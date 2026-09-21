@@ -1,4 +1,3 @@
-local Settings = require(script.Parent.Settings)
 local SplineJoin = require(script.Parent.SplineJoin)
 local ShapeUtils = require(script.Parent.ShapeUtils)
 local doExtend = require(script.Parent.doExtend)
@@ -563,10 +562,9 @@ return function(t: TestContext)
 					first, last = last, first
 				end
 
-				local options = table.clone(Settings.DefaultSplineJoinOptions)
-				options.Segments = 12
+				local segmentCount = 12
 				local targetFrame, targetSize = target.CFrame, target.Size
-				doExtend(first, last, "SplineJoin", nil, options)
+				doExtend(first, last, "SplineJoin", nil, segmentCount)
 
 				-- Neither selected part is resized or replaced
 				t.expect(target.CFrame).toBe(targetFrame)
@@ -740,8 +738,7 @@ return function(t: TestContext)
 			local c = createPart(cSize, cFrame, folder)
 			local e = createPart(eSize, eFrame, folder)
 
-			local options = table.clone(Settings.DefaultSplineJoinOptions)
-			options.Segments = 0
+			local segmentCount = 0
 
 			local first = {
 				Object = if fixture.Reverse then e else c,
@@ -751,13 +748,7 @@ return function(t: TestContext)
 				Object = if fixture.Reverse then c else e,
 				Normal = if fixture.Reverse then Enum.NormalId.Right else Enum.NormalId.Left,
 			}
-			doExtend(
-				first,
-				second,
-				"SplineJoin",
-				nil,
-				options
-			)
+			doExtend(first, second, "SplineJoin", nil, segmentCount)
 
 			local generated: { BasePart } = {}
 			for _, part in folder:GetChildren() do
@@ -951,9 +942,8 @@ return function(t: TestContext)
 				a.Size = CAST_VECTOR3(vector.create(4, thickness, 3))
 				b.Size = CAST_VECTOR3(vector.create(thickness, 4, 3))
 				b.Color = a.Color
-				local ignoredOptions = table.clone(Settings.DefaultSplineJoinOptions)
-				ignoredOptions.Segments = 1
-				doExtend(faceA, faceB, "RoundedJoin", false, ignoredOptions, false)
+				local ignoredSegmentCount = 1
+				doExtend(faceA, faceB, "RoundedJoin", false, ignoredSegmentCount, false)
 				local radius = thickness / 2
 				t.expect(CAST_VECTOR(a.Size).x >= 14 - radius).toBe(true)
 				near(CAST_VECTOR(a.Size) * vector.create(0, 1, 1), vector.create(0, thickness, 3))
@@ -1686,9 +1676,8 @@ return function(t: TestContext)
 	t.test("SplineJoin: leaves both parts untouched and preserves clones", function()
 		withParts(function(folder, a, b, faceA, faceB)
 			b.Color = a.Color
-			local options = table.clone(Settings.DefaultSplineJoinOptions)
-			options.Segments = 7
-			doExtend(faceA, faceB, "SplineJoin", false, options)
+			local segmentCount = 7
+			doExtend(faceA, faceB, "SplineJoin", false, segmentCount)
 			t.expect(#folder:GetChildren()).toBe(9)
 			near(CAST_VECTOR(a.Size), vector.create(4, 2, 3))
 			near(CAST_VECTOR(a.Position), vector.create(-2, 0, 0))
@@ -1721,9 +1710,8 @@ return function(t: TestContext)
 				a.Color = Color3.new(1, 0, 0)
 				b.Color = case.Color
 				b.Transparency = case.Transparency
-				local options = table.clone(Settings.DefaultSplineJoinOptions)
-				options.Segments = 8
-				doExtend(faceA, faceB, "SplineJoin", false, options)
+				local segmentCount = 8
+				doExtend(faceA, faceB, "SplineJoin", false, segmentCount)
 
 				-- Generated parts are parented in order from the first part to the second
 				local previousBlue, previousTransparency = 0, 0
@@ -1761,9 +1749,8 @@ return function(t: TestContext)
 			a:ClearAllChildren()
 			a:SetAttribute("ArcTemplate", nil)
 			b.Color = a.Color
-			local options = table.clone(Settings.DefaultSplineJoinOptions)
-			options.Segments = 12
-			doExtend(faceA, faceB, "SplineJoin", false, options)
+			local segmentCount = 12
+			doExtend(faceA, faceB, "SplineJoin", false, segmentCount)
 			t.expect(#folder:GetChildren()).toBe(14)
 			near(CAST_VECTOR(a.Size), vector.create(4, 2, 3))
 			near(CAST_VECTOR(a.Position), vector.create(-2, 0, 0))
@@ -1776,10 +1763,9 @@ return function(t: TestContext)
 		local segmentCounts = { -1, 1.5, math.huge, 0 / 0 }
 		for _, count in segmentCounts do
 			withParts(function(folder, a, b, faceA, faceB)
-				local options = table.clone(Settings.DefaultSplineJoinOptions)
-				options.Segments = count
+				local segmentCount = count
 				t.expect(function()
-					doExtend(faceA, faceB, "SplineJoin", false, options)
+					doExtend(faceA, faceB, "SplineJoin", false, segmentCount)
 				end).toThrow("Spline Join:")
 				t.expect(#folder:GetChildren()).toBe(2)
 				near(CAST_VECTOR(a.Size), vector.create(4, 2, 3))

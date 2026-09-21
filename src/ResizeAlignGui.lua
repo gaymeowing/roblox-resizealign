@@ -195,25 +195,24 @@ local function OptionEntry(props: {
 end
 
 local function SplineJoinOptions(props: {
-	Options: Settings.SplineJoinOptions,
+	Settings: Settings.ResizeAlignSettings,
 	UpdatedSettings: () -> (),
 })
-	local options = props.Options
 	return React.createElement(React.Fragment, nil, {
 		Segments = e(OptionEntry, {
 			LayoutOrder = 2,
 			HelpText = "Number of clones making up the spline. More segments produce a smoother curve. Leave empty or enter \"automatic\" to choose the count from the spline length and curvature.",
 			Content = e(NumberInput, {
 				Label = "Segments",
-				Value = options.Segments,
+				Value = props.Settings.SplineJoinSegments,
 				ZeroLabel = "Automatic",
 				TextBoxWidth = UDim.new(0.5, -3),
 				ValueEntered = function(value: number): number
 					if value % 1 == 0 and value >= 0 then
-						options.Segments = value
+						props.Settings.SplineJoinSegments = value
 						props.UpdatedSettings()
 					end
-					return options.Segments
+					return props.Settings.SplineJoinSegments
 				end,
 			}),
 		}),
@@ -392,7 +391,7 @@ local function ResizeMethodPanel(props: {
 			"Connect the selected faces with clones of the first part along a spline that matches both face orientations.",
 			7,
 			e(SplineJoinOptions, {
-				Options = props.Settings.SplineJoin,
+				Settings = props.Settings,
 				UpdatedSettings = props.UpdatedSettings,
 			})
 		),

@@ -14,7 +14,7 @@ local function makeTestSettings()
 		AcuteWedgeJoin = true,
 		UseCylinderForRoundedJoin = true,
 		RoundedJoinRadius = 0,
-		SplineJoin = table.clone(require(script.Parent.Settings).DefaultSplineJoinOptions),
+		SplineJoinSegments = 0,
 		SelectionThreshold = "25",
 		ClassicUI = false,
 	}

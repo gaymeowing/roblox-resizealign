@@ -477,7 +477,7 @@ local function doExtend(
 	faceB: Face,
 	resizeMode: ResizeMode,
 	acuteWedgeJoin: boolean?,
-	splineOptions: Settings.SplineJoinOptions?,
+	splineJoinSegments: number?,
 	useCylinderForRoundedJoin: boolean?,
 	roundedJoinRadius: number?
 )
@@ -548,8 +548,8 @@ local function doExtend(
 			return
 		end
 
-		local options = splineOptions or Settings.DefaultSplineJoinOptions
-		createSplineJoin(faceA, faceB, if options.Segments == 0 then nil else options.Segments)
+		-- Zero, like leaving it out, chooses the segment count automatically
+		createSplineJoin(faceA, faceB, if splineJoinSegments == 0 then nil else splineJoinSegments)
 		return
 	end
 

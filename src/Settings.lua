@@ -5,15 +5,6 @@ local kSettingsKey = "resizeAlignState"
 local PluginGuiTypes = require("./PluginGui/Types")
 
 export type ResizeMode = "OuterTouch" | "InnerTouch" | "WedgeJoin" | "RoundedJoin" | "SplineJoin" | "ButtJoint" | "ExtendUpTo" | "ExtendInto"
-export type SplineJoinOptions = {
-	-- Zero chooses the segment count automatically
-	Segments: number,
-}
-
-local DEFAULT_SPLINE_JOIN_OPTIONS: SplineJoinOptions = {
-	Segments = 0,
-}
-
 export type SelectionThreshold = "25" | "15" | "Exact"
 
 export type ResizeAlignSettings = PluginGuiTypes.PluginGuiSettings & {
@@ -22,21 +13,14 @@ export type ResizeAlignSettings = PluginGuiTypes.PluginGuiSettings & {
 	UseCylinderForRoundedJoin: boolean,
 	-- Zero uses the radius the joined faces need
 	RoundedJoinRadius: number,
-	SplineJoin: SplineJoinOptions,
+	-- Zero chooses the segment count automatically
+	SplineJoinSegments: number,
 	SelectionThreshold: SelectionThreshold,
 	ClassicUI: boolean,
 }
 
 local function loadSettings(plugin: Plugin): ResizeAlignSettings
 	local raw = plugin:GetSetting(kSettingsKey) or {}
-	-- Only the current options are carried over, which drops ones that were
-	-- saved by earlier versions such as padding
-	local savedSplineJoin = raw.SplineJoin or raw.ArcJoin or {}
-	local splineJoin = table.clone(DEFAULT_SPLINE_JOIN_OPTIONS)
-	-- Migrate the old AutomaticSegments checkbox, which is now Segments = 0
-	if savedSplineJoin.Segments ~= nil and not savedSplineJoin.AutomaticSegments then
-		splineJoin.Segments = savedSplineJoin.Segments
-	end
 	return {
 		WindowPosition = Vector2.new(
 			raw.WindowPositionX or InitialPosition.X,
@@ -52,11 +36,8 @@ local function loadSettings(plugin: Plugin): ResizeAlignSettings
 
 		----
 
-		SplineJoin = splineJoin,
-		ResizeMode = if raw.ResizeMode == "ArcJoin"
-			then "SplineJoin"
-			elseif raw.ResizeMode ~= nil then raw.ResizeMode
-			else "OuterTouch",
+		ResizeMode = if raw.ResizeMode ~= nil then raw.ResizeMode else "OuterTouch",
+		SplineJoinSegments = if raw.SplineJoinSegments ~= nil then raw.SplineJoinSegments else 0,
 		UseCylinderForRoundedJoin = if raw.UseCylinderForRoundedJoin ~= nil then raw.UseCylinderForRoundedJoin else true,
 		RoundedJoinRadius = if raw.RoundedJoinRadius ~= nil then raw.RoundedJoinRadius else 0,
 		AcuteWedgeJoin = if raw.AcuteWedgeJoin ~= nil then raw.AcuteWedgeJoin else true,
@@ -77,7 +58,7 @@ local function saveSettings(plugin: Plugin, settings: ResizeAlignSettings)
 		----
 
 		ResizeMode = settings.ResizeMode,
-		SplineJoin = settings.SplineJoin,
+		SplineJoinSegments = settings.SplineJoinSegments,
 		AcuteWedgeJoin = settings.AcuteWedgeJoin,
 		UseCylinderForRoundedJoin = settings.UseCylinderForRoundedJoin,
 		RoundedJoinRadius = settings.RoundedJoinRadius,
@@ -87,7 +68,6 @@ local function saveSettings(plugin: Plugin, settings: ResizeAlignSettings)
 end
 
 return {
-	DefaultSplineJoinOptions = DEFAULT_SPLINE_JOIN_OPTIONS,
 	Load = loadSettings,
 	Save = saveSettings,
 }
