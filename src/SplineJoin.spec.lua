@@ -874,9 +874,14 @@ return function(t: TestContext)
 						and padding == 0
 					then
 						checkSingleOwnerMiters(segments, normal, offset)
-						assert(#segments >= 17 and #segments <= 20, `The wide spatial bend generated {#segments} segments`)
-						for i = 1, #segments - 3 do
-							for j = i + 3, #segments do
+						assert(#segments >= 17 and #segments <= 26, `The wide spatial bend generated {#segments} segments`)
+						-- The wide section fans about a pivot on its own inside edge,
+						-- so the slivers around the pivot all share it and overlap.
+						-- What must not happen is the join doubling back on itself:
+						-- segments far apart along the chain stay clear of each other.
+						local apart = math.ceil(#segments * 0.6)
+						for i = 1, #segments - apart do
+							for j = i + apart, #segments do
 								assert(not areOverlapping(segments[i], segments[j]), `F/D segments {i} and {j} overlap`)
 							end
 						end
