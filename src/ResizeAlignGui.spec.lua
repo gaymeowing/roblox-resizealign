@@ -189,11 +189,13 @@ return function(t: TestContext)
 					return screen:FindFirstChild("SplineJoinOptions", true).Content.Segments:FindFirstChild("TextBox", true)
 				end
 				t.expect(settings.SplineJoinSegments).toBe(0)
+				-- The label is plain, only numbers are bold
 				t.expect(textBox().Text:find("Automatic", 1, true) ~= nil).toBe(true)
+				t.expect(textBox().Text:find("<b>", 1, true)).toBe(nil)
 				settings.SplineJoinSegments = 12
 				render()
 				t.expect(textBox().Text:find("Automatic", 1, true)).toBe(nil)
-				t.expect(textBox().Text:find("12", 1, true) ~= nil).toBe(true)
+				t.expect(textBox().Text:find("<b>12</b>", 1, true) ~= nil).toBe(true)
 			end,
 		})
 	end)

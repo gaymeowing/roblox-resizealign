@@ -29,7 +29,10 @@ local function NumberInput(props: {
 	local showZeroLabel = props.ZeroLabel ~= nil and props.Value == 0
 	local valueText = if showZeroLabel then props.ZeroLabel :: string else string.format("%g", props.Value)
 	local unitText = if props.Unit and not showZeroLabel then props.Unit else ""
-	local displayText = string.format('<b>%s</b><font size="14">%s</font>', valueText, unitText)
+	-- Numbers are bold, but a whole word in bold is too loud
+	local displayText = if showZeroLabel
+		then valueText
+		else string.format('<b>%s</b><font size="14">%s</font>', valueText, unitText)
 
 	-- Tracked as state so that we re-render once layout gives the box its width,
 	-- which isn't known yet on the first render
