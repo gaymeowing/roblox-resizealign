@@ -366,19 +366,25 @@ end
 
 -- Scene data, including the planned green parts, is built once at module load.
 local function buildSplineDemo()
-	local start = Vector3.new(-0.7, -0.2, 0)
-	local finish = Vector3.new(0.8, 0.6, 0)
 	local direction = Vector3.new(1, 1, 0).Unit
 	local rotation = CFrame.Angles(0, 0, math.pi / 4)
+	-- Spline Join leaves both parts as they are, so they have one state and
+	-- the spline runs between their selected faces
+	local partA = { CFrame = CFrame.new(-2.25, -0.2, 0), Size = Vector3.new(1.5, 1, 0.8) }
+	local partB = { CFrame = CFrame.new(Vector3.new(0.8, 0.6, 0) + direction * 1.65) * rotation, Size = Vector3.new(1.9, 1, 0.8) }
+	local start = partA.CFrame:PointToWorldSpace(Vector3.new(partA.Size.X / 2, 0, 0))
+	local finish = partB.CFrame:PointToWorldSpace(Vector3.new(-partB.Size.X / 2, 0, 0))
 
 	local template = Instance.new("Part")
 	template.Size = Vector3.new(1, 1, 0.8)
 	local demo = {
-		cameraCFrame = ANG_CAM,
-		partAStart = { CFrame = CFrame.new(-2.25, start.Y, 0), Size = Vector3.new(1.5, 1, 0.8) },
-		partAEnd = { CFrame = CFrame.new(-1.85, start.Y, 0), Size = Vector3.new(2.3, 1, 0.8) },
-		partBStart = { CFrame = CFrame.new(finish + direction * 1.65) * rotation, Size = Vector3.new(1.9, 1, 0.8) },
-		partBEnd = { CFrame = CFrame.new(finish + direction * 1.3) * rotation, Size = Vector3.new(2.6, 1, 0.8) },
+		-- Further back than the other scenes, to fit the parts and the gap
+		-- between them that the spline has to cross
+		cameraCFrame = CFrame.lookAt(Vector3.new(0.1, 0.55, 5), Vector3.new(0.1, 0.55, 0)),
+		partAStart = partA,
+		partAEnd = partA,
+		partBStart = partB,
+		partBEnd = partB,
 		filler = {
 			segments = SplineJoin.plan(template, CFrame.new(start), finish, -direction, Vector3.xAxis, 24),
 		},
@@ -530,10 +536,11 @@ local function ModeDemo(props: PreviewProps)
 
 				task.wait(0.6)
 
-				-- Animate to end state
+				-- Animate to end state, for the modes that move their parts
 				local STEPS = if curved then 24 else 20
 				local ANIM_TIME = if curved then 0.6 else 0.4
-				for i = 1, STEPS do
+				local partsMove = data.partAStart ~= data.partAEnd or data.partBStart ~= data.partBEnd
+				for i = 1, if partsMove then STEPS else 0 do
 					local progress = i / STEPS
 					local t = if curved then progress * progress * (3 - 2 * progress) else progress
 					partA.CFrame = data.partAStart.CFrame:Lerp(data.partAEnd.CFrame, t)
