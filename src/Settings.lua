@@ -8,18 +8,10 @@ export type ResizeMode = "OuterTouch" | "InnerTouch" | "WedgeJoin" | "RoundedJoi
 export type SplineJoinOptions = {
 	-- Zero chooses the segment count automatically
 	Segments: number,
-	Padding: number,
-	AdvancedPadding: boolean,
-	PaddingA: number,
-	PaddingB: number,
 }
 
 local DEFAULT_SPLINE_JOIN_OPTIONS: SplineJoinOptions = {
 	Segments = 0,
-	Padding = 0,
-	AdvancedPadding = false,
-	PaddingA = 0,
-	PaddingB = 0,
 }
 
 export type SelectionThreshold = "25" | "15" | "Exact"
@@ -37,16 +29,13 @@ export type ResizeAlignSettings = PluginGuiTypes.PluginGuiSettings & {
 
 local function loadSettings(plugin: Plugin): ResizeAlignSettings
 	local raw = plugin:GetSetting(kSettingsKey) or {}
-	local splineJoin = raw.SplineJoin or raw.ArcJoin or {}
+	-- Only the current options are carried over, which drops ones that were
+	-- saved by earlier versions such as padding
+	local savedSplineJoin = raw.SplineJoin or raw.ArcJoin or {}
+	local splineJoin = table.clone(DEFAULT_SPLINE_JOIN_OPTIONS)
 	-- Migrate the old AutomaticSegments checkbox, which is now Segments = 0
-	if splineJoin.AutomaticSegments then
-		splineJoin.Segments = 0
-	end
-	splineJoin.AutomaticSegments = nil
-	for key, default in DEFAULT_SPLINE_JOIN_OPTIONS do
-		if splineJoin[key] == nil then
-			splineJoin[key] = default
-		end
+	if savedSplineJoin.Segments ~= nil and not savedSplineJoin.AutomaticSegments then
+		splineJoin.Segments = savedSplineJoin.Segments
 	end
 	return {
 		WindowPosition = Vector2.new(

@@ -21,7 +21,6 @@ local FaceHighlight = require("./FaceHighlight")
 local doExtend = require("./doExtend")
 
 type Face = doExtend.Face
-type PaddingKey = "Padding" | "PaddingA" | "PaddingB"
 
 local e = React.createElement
 
@@ -200,49 +199,6 @@ local function SplineJoinOptions(props: {
 	UpdatedSettings: () -> (),
 })
 	local options = props.Options
-	local function paddingInput(key: PaddingKey, color: Color3?)
-		return e(NumberInput, {
-			Value = options[key],
-			ChipColor = color,
-			LayoutOrder = 1,
-			EmptyAsZero = true,
-			Unit = " studs",
-			ValueEntered = function(value: number): number
-				if value >= 0 and value <= 2048 then
-					options[key] = value
-					props.UpdatedSettings()
-				end
-				return options[key]
-			end,
-		})
-	end
-
-	local function paddingField(label: string, key: PaddingKey, order: number, color: Color3?)
-		return e("Frame", {
-			Size = UDim2.new(
-				if options.AdvancedPadding then 0.5 else 1,
-				if options.AdvancedPadding then -3 else 0,
-				1,
-				0
-			),
-			BackgroundTransparency = 1,
-			LayoutOrder = order,
-		}, {
-			Layout = e("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }),
-			Label = e("TextLabel", {
-				Size = UDim2.new(1, 0, 0, 18),
-				BackgroundTransparency = 1,
-				Text = label,
-				TextColor3 = Colors.WHITE,
-				TextXAlignment = Enum.TextXAlignment.Left,
-				Font = Enum.Font.SourceSans,
-				TextSize = 16,
-				LayoutOrder = 0,
-			}),
-			Input = paddingInput(key, color),
-		})
-	end
-
 	return React.createElement(React.Fragment, nil, {
 		Segments = e(OptionEntry, {
 			LayoutOrder = 2,
@@ -259,35 +215,6 @@ local function SplineJoinOptions(props: {
 					end
 					return options.Segments
 				end,
-			}),
-		}),
-		AdvancedPadding = e(OptionEntry, {
-			LayoutOrder = 3,
-			HelpText = "Set padding separately for the first and second selected parts. Turn this off to use one value for both ends.",
-			Content = e(Checkbox, {
-				Label = "Advanced padding",
-				Checked = options.AdvancedPadding,
-				Changed = function(value: boolean)
-					options.AdvancedPadding = value
-					props.UpdatedSettings()
-				end,
-			}),
-		}),
-		Padding = e(OptionEntry, {
-			LayoutOrder = 4,
-			HelpText = "Extend the selected parts by this amount before creating the spline. Padding reduces the space the spline spans; zero adds no padding.",
-			Content = e("Frame", {
-				Size = UDim2.new(1, 0, 0, 42),
-				BackgroundTransparency = 1,
-			}, {
-				Layout = e("UIListLayout", {
-					FillDirection = Enum.FillDirection.Horizontal,
-					SortOrder = Enum.SortOrder.LayoutOrder,
-					Padding = UDim.new(0, 6),
-				}),
-				Both = not options.AdvancedPadding and paddingField("Both ends", "Padding", 1),
-				First = options.AdvancedPadding and paddingField("First part", "PaddingA", 1, Color3.new(1,0,0)),
-				Second = options.AdvancedPadding and paddingField("Second part", "PaddingB", 2, Color3.new(0,0,1)),
 			}),
 		}),
 	})

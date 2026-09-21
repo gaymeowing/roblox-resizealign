@@ -17,13 +17,10 @@ end
 
 -- Interpret the text entered into a NumberInput, nil if it isn't a number.
 -- With a zeroLabel, that label (in any case) or empty text means zero.
-local function interpretNumberInput(input: string, emptyAsZero: boolean?, zeroLabel: string?): number?
+local function interpretNumberInput(input: string, zeroLabel: string?): number?
 	local text = input:match("^%s*(.-)%s*$") :: string
 	if text == "" then
-		if emptyAsZero or zeroLabel then
-			return 0
-		end
-		return nil
+		return if zeroLabel then 0 else nil
 	end
 	if zeroLabel and text:lower() == zeroLabel:lower() then
 		return 0

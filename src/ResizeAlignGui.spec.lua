@@ -119,8 +119,8 @@ return function(t: TestContext)
 						local segments = spline.Content.Segments:FindFirstChild("TextBox", true)
 						t.expect(segments.Text:find("Automatic", 1, true) ~= nil).toBe(true)
 						t.expect(panel.BackgroundColor3).toBe(Color3.fromRGB(18, 18, 18))
-						local textbox = spline.Content.Padding:FindFirstChild("TextBox", true)
-						t.expect(textbox.Text:find("studs", 1, true) ~= nil).toBe(true)
+						t.expect(spline.Content:FindFirstChild("Padding")).toBe(nil)
+						t.expect(spline.Content:FindFirstChild("AdvancedPadding")).toBe(nil)
 					end
 				end,
 			})
@@ -168,9 +168,6 @@ return function(t: TestContext)
 				header = screen:FindFirstChild("SplineJoin", true)
 				t.expect(panel.AbsoluteSize.Y).toBe(height)
 				t.expect(header.Outline.AbsolutePosition.Y).toBe(header.AbsolutePosition.Y)
-				settings.SplineJoin.AdvancedPadding = true
-				render()
-				t.expect(panel.AbsoluteSize.Y).toBe(height)
 				settings.SplineJoin.Segments = 12
 				render()
 				t.expect(panel.AbsoluteSize.Y).toBe(height)
@@ -178,10 +175,7 @@ return function(t: TestContext)
 				local segments = content.Segments
 				local segmentLabel = segments:FindFirstChild("Label", true)
 				local segmentTextBox = segments:FindFirstChild("TextBox", true)
-				local secondTextBox = content.Padding:FindFirstChild("Second", true).Input.TextBox
 				t.expect(segmentLabel.TextXAlignment).toBe(Enum.TextXAlignment.Left)
-				t.expect(segmentTextBox.AbsoluteSize.X).toBe(secondTextBox.AbsoluteSize.X)
-				t.expect(segmentTextBox.AbsolutePosition.X).toBe(secondTextBox.AbsolutePosition.X)
 				t.expect(segmentTextBox.AbsolutePosition.X > segmentLabel.AbsolutePosition.X + segmentLabel.AbsoluteSize.X).toBe(true)
 			end,
 		})

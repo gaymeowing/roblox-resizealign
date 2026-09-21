@@ -5,7 +5,6 @@ local DraggerService = game:GetService("DraggerService")
 local Src = script.Parent
 local Packages = Src.Parent.Packages
 
-local areInstancesSame = require("./areInstancesSame")
 local DraggerFramework = require(Packages.DraggerFramework)
 local JointMaker = require(DraggerFramework.Utility.JointMaker)
 
@@ -378,48 +377,13 @@ local function getSplineFace(face: Face): (CFrame, Vector3, Vector3, ("Part" | "
 	return CFrame.new(point) * cf.Rotation, size, Vector3.fromNormalId(face.Normal), nil
 end
 
-local SPLINE_EXTENSION_IGNORED_PROPERTIES = { "CFrame", "Position", "Orientation", "Rotation", "Size" }
-
-local function getSplineExtension(template: BasePart, face: Face, candidate: BasePart): number?
-	local part = face.Object
-
-	if not areInstancesSame(template, part, SPLINE_EXTENSION_IGNORED_PROPERTIES) then
-		return nil
-	end
-
-	local dimension = getDimension(face)
-	local cross = Vector3.one - dimension
-	local relative = part.CFrame:ToObjectSpace(candidate.CFrame)
-
-	local projectedSize = relative.XVector:Abs() * candidate.Size.X
-		+ relative.YVector:Abs() * candidate.Size.Y
-		+ relative.ZVector:Abs() * candidate.Size.Z
-
-	--stylua: ignore
-	if
-		((projectedSize - part.Size) * cross).Magnitude > 0.0001
-		or (relative.Position * cross).Magnitude > 0.0001
-	then
-		return nil
-	end
-
-	local point, normal = getBasis(face)
-	local extension = (candidate.CFrame.Position - point):Dot(normal) + projectedSize:Dot(dimension) / 2
-	local length = part.Size:Dot(dimension) + extension
-	return if length >= 0.001 and length <= 2048 then extension else nil
-end
-
-local function createSplineJoin(
-	faceA: Face,
-	faceB: Face,
-	paddingA: number,
-	paddingB: number,
-	segmentCount: number?,
-	allowShrink: boolean?
-)
-	if (not allowShrink) and (paddingA < 0 or paddingB < 0) then
-		error("Spline Join: padding must be a non-negative number.")
-	end
+-- Rounded Join passes how far to resize each part before joining them, which
+-- sets its two parts back from their corner. Spline Join leaves both parts alone.
+local function createSplineJoin(faceA: Face, faceB: Face, segmentCount: number?, resizeA: number?, resizeB: number?)
+	local paddingA = resizeA or 0
+	local paddingB = resizeB or 0
+	-- Rounded Join has already chosen both endpoints, so they are not refitted
+	local fitSurface = resizeA == nil and resizeB == nil
 
 	local frameA, profileA, localNormalA, extrusionClass = getSplineFace(faceA)
 	local frameB, profileB, localNormalB = getSplineFace(faceB)
@@ -437,17 +401,6 @@ local function createSplineJoin(
 		localNormalA,
 		localNormalB
 	)
-
-	if not allowShrink and vector.dot(endPoint - startPoint, pointB - pointA) <= 0 then
-		error("Spline Join: padding leaves no room for the spline.")
-	end
-
-	local sizeA = faceA.Object.Size + getDimension(faceA) * paddingA
-	local sizeB = faceB.Object.Size + getDimension(faceB) * paddingB
-
-	if math.max(sizeA.X, sizeA.Y, sizeA.Z, sizeB.X, sizeB.Y, sizeB.Z) > 2048 then
-		error("Spline Join: padding exceeds the maximum part size.")
-	end
 
 	local temporaryTemplate: BasePart?
 	local template = faceA.Object
@@ -468,7 +421,7 @@ local function createSplineJoin(
 		normalB,
 		localNormalA,
 		segmentCount,
-		if allowShrink then nil else surfaceOffset,
+		if fitSurface then surfaceOffset else nil,
 		targetRotation
 	)
 
@@ -500,26 +453,6 @@ local function createSplineJoin(
 		end
 	end
 
-	local first = 1
-	local last = #parts
-	local extensionA = getSplineExtension(faceA.Object, faceA, parts[first])
-
-	if extensionA then
-		paddingA = extensionA
-		parts[first]:Destroy()
-		first += 1
-	end
-
-	if first <= last then
-		local extensionB = getSplineExtension(faceA.Object, faceB, parts[last])
-
-		if extensionB then
-			paddingB = extensionB
-			parts[last]:Destroy()
-			last -= 1
-		end
-	end
-
 	local recording = ChangeHistoryService:TryBeginRecording("ResizeAlign")
 
 	if paddingA ~= 0 then
@@ -530,8 +463,8 @@ local function createSplineJoin(
 		resizePart(faceB, paddingB)
 	end
 
-	for i = first, last do
-		parts[i].Parent = faceA.Object.Parent
+	for _, part in parts do
+		part.Parent = faceA.Object.Parent
 	end
 
 	if recording then
@@ -616,13 +549,7 @@ local function doExtend(
 		end
 
 		local options = splineOptions or Settings.DefaultSplineJoinOptions
-		createSplineJoin(
-			faceA,
-			faceB,
-			if options.AdvancedPadding then options.PaddingA else options.Padding,
-			if options.AdvancedPadding then options.PaddingB else options.Padding,
-			if options.Segments == 0 then nil else options.Segments
-		)
+		createSplineJoin(faceA, faceB, if options.Segments == 0 then nil else options.Segments)
 		return
 	end
 
@@ -790,7 +717,7 @@ local function doExtend(
 		if paddingA <= -extendableA + 0.001 or paddingB <= -extendableB + 0.001 then
 			return
 		end
-		createSplineJoin(faceA, faceB, paddingA, paddingB, nil, true)
+		createSplineJoin(faceA, faceB, nil, paddingA, paddingB)
 		return
 	end
 

@@ -168,25 +168,6 @@ local function tangentAt(
 	)
 end
 
-local function intersectTangents(a: vector, directionA: vector, b: vector, directionB: vector): vector
-	local separation = b - a
-	local normal = vector.cross(directionA, directionB)
-	local denominator = vector.dot(normal, normal)
-
-	if denominator > 1e-10 then
-		local reachA = vector.dot(vector.cross(separation, directionB), normal) / denominator
-		local reachB = vector.dot(vector.cross(directionA, separation), normal) / denominator
-		local limit = vector.magnitude(separation) * 2
-
-		if reachA >= 0 and reachB >= 0 and reachA <= limit and reachB <= limit then
-			return a + directionA * reachA
-		end
-	end
-	-- Across an inflection the tangent intersection can lie behind an endpoint
-	-- or arbitrarily far away. Keep that joint inside the sampled interval.
-	return (a + b) / 2
-end
-
 local function distanceToSegmentSquared(point: vector, a: vector, b: vector): number
 	local chord = b - a
 	local lengthSquared = vector.dot(chord, chord)
@@ -206,19 +187,10 @@ local function surfaceIntervalError(
 ): number
 	local a = pointAt(startPoint, controlA, controlB, endPoint, left, lateral)
 	local b = pointAt(startPoint, controlA, controlB, endPoint, right, lateral)
-	local joint = intersectTangents(
-		a,
-		tangentAt(startPoint, controlA, controlB, endPoint, left, lateral),
-		b,
-		tangentAt(startPoint, controlA, controlB, endPoint, right, lateral)
-	)
 	local errorSquared = 0
 	for quarter = 1, 3 do
 		local point = pointAt(startPoint, controlA, controlB, endPoint, left + (right - left) * quarter / 4, lateral)
-		errorSquared = math.max(
-			errorSquared,
-			math.min(distanceToSegmentSquared(point, a, joint), distanceToSegmentSquared(point, joint, b))
-		)
+		errorSquared = math.max(errorSquared, distanceToSegmentSquared(point, a, b))
 	end
 	return errorSquared
 end
@@ -325,7 +297,9 @@ end
 
 -- startFrame retains the first part's axes at its selected face. Both normals
 -- point out of the selected parts; tangent offsets point toward the controls.
--- Every generated part is a clone of template.
+-- Every generated part is a clone of template, laid along a chord of the curve,
+-- so the first and last parts already turn away from the selected faces. Those
+-- two reach back over the selected faces the same way neighbors cover a miter.
 function SplineJoin.plan(
 	template: BasePart,
 	startFrame: CFrame,
@@ -405,8 +379,6 @@ function SplineJoin.plan(
 	local count: number
 	local scratchParameters = REFINED_PARAMETERS
 	local parameters = PARAMETERS
-	local useEndpointDirections: boolean
-	local usesTangentSegments: boolean
 	local parameterCount = 1
 
 	parameters[1] = 0
@@ -487,15 +459,11 @@ function SplineJoin.plan(
 				turnSegments = math.min(turnSegments, errorSegments)
 			end
 
-			-- Reserve the two tangent segments without making every sample a clone.
-			local turnCount = if turnSegments > 1 then turnSegments + 1 else turnSegments
-			count = requestedSegments or math.max(1, math.ceil(totalLength / templateLength), turnCount)
+			count = requestedSegments or math.max(1, math.ceil(totalLength / templateLength), turnSegments)
 		end
-		useEndpointDirections = count >= 3
-		usesTangentSegments = planar and useEndpointDirections
 
 		do
-			local intervals = if usesTangentSegments then count - 1 else count
+			local intervals = count
 			local sample = 1
 
 			for i = 1, intervals do
@@ -526,7 +494,7 @@ function SplineJoin.plan(
 			parameters[parameterCount] = 1
 		end
 
-		if usesTangentSegments and requestedSegments == nil and guideOffset ~= vector.zero then
+		if planar and count >= 3 and requestedSegments == nil and guideOffset ~= vector.zero then
 			local turnAxis = -cross
 			local subdivided = false
 
@@ -595,56 +563,15 @@ function SplineJoin.plan(
 				parameters, scratchParameters = scratchParameters, parameters
 				parameterCount = simplifiedCount + 2
 			end
-			count = parameterCount
+			count = parameterCount - 1
 		end
 	end
 
+	for i = 1, parameterCount do
+		POINTS[i] = pointAt(startPoint, controlA, controlB, finishPoint, parameters[i], lateral)
+	end
 	POINTS[1] = startPoint
-
-	do
-		local previousTangentPoint = startPoint
-		local previousTangent = startNormal
-
-		for i = 2, parameterCount do
-			local t = parameters[i]
-			local point = pointAt(startPoint, controlA, controlB, finishPoint, t, lateral)
-
-			if usesTangentSegments then
-				local tangent = tangentAt(startPoint, controlA, controlB, finishPoint, t, lateral)
-				POINTS[i] = intersectTangents(previousTangentPoint, previousTangent, point, tangent)
-				previousTangentPoint = point
-				previousTangent = tangent
-			else
-				POINTS[i] = point
-			end
-		end
-		POINTS[count + 1] = finishPoint
-
-		if usesTangentSegments then
-			-- An inflection can replace a tangent intersection with a midpoint.
-			-- Keep the endpoint segments on their source faces even at coarse counts.
-			local firstOffset = POINTS[2] - startPoint
-			local lastOffset = POINTS[count] - finishPoint
-
-			if vector.magnitude(vector.cross(firstOffset, startNormal)) > 0.00001 then
-				POINTS[2] = startPoint + startNormal * math.max(0.001, vector.dot(firstOffset, startNormal))
-			end
-
-			if vector.magnitude(vector.cross(lastOffset, endNormal)) > 0.00001 then
-				POINTS[count] = finishPoint + endNormal * math.max(0.001, vector.dot(lastOffset, endNormal))
-			end
-		end
-
-		if count == 2 and tangentCorner then
-			POINTS[2] = tangentCorner
-		elseif useEndpointDirections and not usesTangentSegments then
-			-- Project the endpoint vertices onto their forward tangent rays. A
-			-- skew chord intersection can lie behind the face and reverse the end.
-			POINTS[2] = startPoint + startNormal * math.max(0.001, vector.dot((POINTS[2] - startPoint), startNormal))
-			POINTS[count] = finishPoint
-				+ endNormal * math.max(0.001, vector.dot((POINTS[count] - finishPoint), endNormal))
-		end
-	end
+	POINTS[count + 1] = finishPoint
 
 	local transportRoll = 0
 	do
@@ -656,10 +583,7 @@ function SplineJoin.plan(
 			local point = POINTS[i + 1]
 			local chord = point - previousPoint
 
-			local direction = if useEndpointDirections and i == 1
-				then startNormal
-				elseif useEndpointDirections and i == count then -endNormal
-				else vector.normalize(chord)
+			local direction = vector.normalize(chord)
 			DIRECTIONS[i] = direction
 
 			if isTwistedSpatial then
@@ -685,17 +609,9 @@ function SplineJoin.plan(
 
 		for i = 1, count do
 			local point = POINTS[i + 1]
-			-- Endpoint vertices lie on their tangents. Use those exact directions
-			-- instead of amplifying world-coordinate rounding on very short chords.
 			local direction = DIRECTIONS[i]
 			local length = vector.magnitude(point - previousPoint)
-			--stylua: ignore
-			local midpoint = if useEndpointDirections and i == 1 then
-					startPoint + direction * (length / 2)
-				elseif useEndpointDirections and i == count then
-					finishPoint - direction * (length / 2)
-				else
-					(previousPoint + point) / 2
+			local midpoint = (previousPoint + point) / 2
 
 			-- Spatial curves use a rotation-minimizing transported frame. Apply
 			-- only the residual endpoint roll, spread smoothly across the arc.
@@ -783,13 +699,14 @@ function SplineJoin.plan(
 			if isTwistedSpatial then
 				-- Whichever neighbor needs less reach owns this joint. Ties go
 				-- to the follower, except at the first joint: extending segment
-				-- two backward can cross the selected front face.
-				before = if i > 2 and START_REACHES[i] <= END_REACHES[i - 1] then START_REACHES[i] else 0
-				after = if i < count and (i == 1 or END_REACHES[i] < START_REACHES[i + 1]) then END_REACHES[i] else 0
+				-- two backward can cross the selected front face. The end
+				-- segments always own their joints with the selected faces.
+				before = if i == 1 or (i > 2 and START_REACHES[i] <= END_REACHES[i - 1]) then START_REACHES[i] else 0
+				after = if i == count or i == 1 or END_REACHES[i] < START_REACHES[i + 1] then END_REACHES[i] else 0
 			else
 				local chordLength = vector.dot(CAST_VECTOR(part.Size), dimension)
-				before = if i == 1 and count > 1 then 0 else math.max(START_REACHES[i], END_REACHES[i] - chordLength)
-				after = if i == count and count > 1 then 0 else math.max(END_REACHES[i], START_REACHES[i] - chordLength)
+				before = math.max(START_REACHES[i], END_REACHES[i] - chordLength)
+				after = math.max(END_REACHES[i], START_REACHES[i] - chordLength)
 			end
 
 			part.Size += CAST_VECTOR3(dimension * (before + after))

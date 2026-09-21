@@ -18,7 +18,6 @@ local function NumberInput(props: {
 	LayoutOrder: number?,
 	ChipColor: Color3?,
 	Grow: boolean?,
-	EmptyAsZero: boolean?,
 	-- Show this text in place of a zero value. Entering it (in any case) or
 	-- leaving the box empty sets the value to zero.
 	ZeroLabel: string?,
@@ -46,7 +45,7 @@ local function NumberInput(props: {
 	local textFitsAtNormalSize = measuredWidth ~= nil and measuredWidth >= displayTextSize + 4
 
 	local onFocusLost = React.useCallback(function(object: TextBox, enterPressed: boolean)
-		local newValue = interpretNumberInput(object.Text, props.EmptyAsZero, props.ZeroLabel)
+		local newValue = interpretNumberInput(object.Text, props.ZeroLabel)
 		if newValue then
 			newValue = props.ValueEntered(newValue)
 			-- If the value didn't change we need to revert because we won't get rerendered
@@ -58,7 +57,7 @@ local function NumberInput(props: {
 			object.Text = displayText
 		end
 		setHasFocus(false)
-	end, { props.ValueEntered, displayText, props.EmptyAsZero, props.ZeroLabel } :: { any })
+	end, { props.ValueEntered, displayText, props.ZeroLabel } :: { any })
 
 	local onFocused = React.useCallback(function(object: TextBox)
 		-- Start empty rather than making the user delete the zero label
@@ -112,13 +111,6 @@ local function NumberInput(props: {
 			LayoutOrder = 2,
 			[React.Event.Focused] = onFocused,
 			[React.Event.FocusLost] = onFocusLost :: any,
-			[React.Change.Text] = function(object: TextBox)
-				if props.EmptyAsZero and object:IsFocused() and object.Text:match("^%s*$") then
-					object.Text = "0"
-					object.CursorPosition = 2
-					object.SelectionStart = 1
-				end
-			end,
 			[React.Change.AbsoluteSize] = function(object: TextBox)
 				setMeasuredWidth(object.AbsoluteSize.X)
 			end,

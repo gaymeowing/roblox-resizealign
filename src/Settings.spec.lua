@@ -30,19 +30,14 @@ return function(t: TestContext)
 			local settings = Settings.Load(t.plugin)
 			local saved = table.clone(settings.SplineJoin)
 			t.expect(settings.SplineJoin.Segments).toBe(0)
-			t.expect(settings.SplineJoin.Padding).toBe(0)
 			settings.SplineJoin = {
 				Segments = 24,
-				Padding = 0.5,
-				AdvancedPadding = true,
-				PaddingA = 1,
-				PaddingB = 2,
 			}
 			Settings.Save(t.plugin, settings)
 			local reloaded = Settings.Load(t.plugin)
 			t.expect(reloaded.SplineJoin).toEqual(settings.SplineJoin)
-			reloaded.SplineJoin.Padding = 3
-			t.expect(settings.SplineJoin.Padding).toBe(0.5)
+			reloaded.SplineJoin.Segments = 3
+			t.expect(settings.SplineJoin.Segments).toBe(24)
 			settings.SplineJoin = saved
 			Settings.Save(t.plugin, settings)
 		end)
@@ -65,7 +60,9 @@ return function(t: TestContext)
 		t.expect(settings.ResizeMode).toBe("SplineJoin")
 		t.expect(settings.SplineJoin.AutomaticSegments).toBe(nil)
 		t.expect(settings.SplineJoin.Segments).toBe(24)
-		t.expect(settings.SplineJoin.Padding).toBe(0.5)
+		-- Padding was removed, and options that no longer exist are dropped
+		t.expect(settings.SplineJoin.Padding).toBe(nil)
+		t.expect(settings.SplineJoin.AdvancedPadding).toBe(nil)
 		Settings.Save(t.plugin, previous)
 	end)
 

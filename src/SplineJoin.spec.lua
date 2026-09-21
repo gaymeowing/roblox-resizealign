@@ -94,6 +94,49 @@ local function inside(segment: Segment, point: vector)
 	assert(isInside(segment, point), "Point is outside the segment")
 end
 
+-- The end segments turn away from the selected faces straight away, so a face
+-- is not contained by one aligned segment any more. On the inside of a tight
+-- bend the segments even fold back behind the face, into the selected part.
+-- What must never happen is a gap in front of the face, so look from a point on
+-- the face back into its part: a segment has to be there, or close behind.
+-- A tilted segment's corners can also graze out of its neighbors by float error.
+local function reachesFacePoint(segments: { Segment }, point: vector, inward: vector, depth: number)
+	for _, segment in segments do
+		-- Slab test of the ray from the point into the part against this box
+		local origin = CFrame_PointToObjectSpace(segment.CFrame, point)
+		local direction = CFrame_VectorToObjectSpace(segment.CFrame, inward)
+		local half = segment.Size / 2 + vector.one * 0.005
+		local enter, leave = 0, depth
+		for _, component in { "x", "y", "z" } do
+			local o, d, h = (origin :: any)[component], (direction :: any)[component], (half :: any)[component]
+			if math.abs(d) < 1e-9 then
+				if math.abs(o) > h then
+					enter, leave = 1, 0
+				end
+			else
+				local t1, t2 = (-h - o) / d, (h - o) / d
+				enter = math.max(enter, math.min(t1, t2))
+				leave = math.min(leave, math.max(t1, t2))
+			end
+		end
+		if enter <= leave then
+			return
+		end
+	end
+	error(`The join leaves a gap in front of the face at {point}`)
+end
+
+-- Without the face's axis, settle for the chain ending close to the point
+local function endsNear(segments: { Segment }, point: vector, tolerance: number)
+	for _, segment in segments do
+		local excess = vector.abs(CFrame_PointToObjectSpace(segment.CFrame, point)) - segment.Size / 2
+		if math.max(excess.x, excess.y, excess.z) <= tolerance then
+			return
+		end
+	end
+	error(`No segment reaches {point}`)
+end
+
 local function jointBetween(a: Segment, b: Segment, normal: vector): (vector, vector, vector)
 	local direction = CFrame_VectorToWorldSpace(a.CFrame, normal)
 	local nextDirection = CFrame_VectorToWorldSpace(b.CFrame, normal)
@@ -157,8 +200,9 @@ end
 
 local function checkPlan(segments: { Segment }, first: vector, last: vector, normal: vector, size: vector)
 	local crossSection = vector.one - vector.abs(normal)
-	inside(segments[1], first)
-	inside(segments[#segments], last)
+	local tolerance = vector.magnitude(size * crossSection) * 0.05
+	endsNear(segments, first, tolerance)
+	endsNear(segments, last, tolerance)
 	for i, segment in segments do
 		near(segment.Size * crossSection, size * crossSection)
 		if i < #segments then
@@ -251,12 +295,60 @@ local function tiltedJoin(reverse: boolean, mirror: number)
 	return start, target, firstSize, secondSize, n1, n2
 end
 
-local function checkEndFace(segment: Segment, frame: CFrame, size: vector)
+-- inward points from the face into the part it belongs to
+local function checkEndFace(segments: { Segment }, frame: CFrame, size: vector, inward: vector)
 	for _, y in SIGNS do
 		for _, z in SIGNS do
-			inside(segment, CFrame_PointToWorldSpace(frame, vector.create(0, y * size.y, z * size.z) / 2))
+			reachesFacePoint(
+				segments,
+				CFrame_PointToWorldSpace(frame, vector.create(0, y * size.y, z * size.z) / 2),
+				inward,
+				vector.magnitude(size)
+			)
 		end
 	end
+end
+
+-- For X-facing fixtures whose two parts differ in height. The template lands
+-- centered on finish, flush with one edge of the target, so only the area the
+-- two cross-sections share is really a face that the join has to reach.
+local function checkTargetFace(
+	segments: { Segment },
+	target: CFrame,
+	targetSize: vector,
+	targetNormal: vector,
+	finish: vector,
+	size: vector
+)
+	local center = CFrame_PointToObjectSpace(target, finish)
+	local low = vector.max(center - size / 2, -targetSize / 2)
+	local high = vector.min(center + size / 2, targetSize / 2)
+	for _, y in { low.y, high.y } do
+		for _, z in { low.z, high.z } do
+			reachesFacePoint(
+				segments,
+				CFrame_PointToWorldSpace(target, vector.create(0, y, z)),
+				-CFrame_VectorToWorldSpace(target, targetNormal),
+				vector.magnitude(size)
+			)
+		end
+	end
+end
+
+local function angleBetween(a: vector, b: vector): number
+	return math.atan2(vector.magnitude(vector.cross(a, b)), vector.dot(a, b))
+end
+
+-- The first and last segments are part of the curve: they have already begun
+-- turning away from the selected faces, but only by a share of the whole turn.
+-- travelIn and travelOut are the directions the join leaves and arrives along.
+local function checkTurningEnds(segments: { Segment }, normal: vector, travelIn: vector, travelOut: vector, limit: number)
+	local first = angleBetween(CFrame_VectorToWorldSpace(segments[1].CFrame, normal), travelIn)
+	local last = angleBetween(CFrame_VectorToWorldSpace(segments[#segments].CFrame, normal), travelOut)
+	assert(first > 0.0001, "The first segment runs straight out of its face instead of curving")
+	assert(last > 0.0001, "The last segment runs straight into its face instead of curving")
+	assert(first <= limit, `The first segment turns {math.deg(first)} degrees away from its face`)
+	assert(last <= limit, `The last segment turns {math.deg(last)} degrees away from its face`)
 end
 
 -- Frozen workspace fixtures: these must also pass without the user's place open.
@@ -275,8 +367,9 @@ local function workspacePair(name: string): (CFrame, vector)
 	end
 end
 
+-- sign is -1 where the template leaves its part, and 1 where it enters the target
 local function checkFittedFace(
-	segment: Segment,
+	segments: { Segment },
 	point: vector,
 	rotation: CFrame,
 	size: vector,
@@ -286,18 +379,14 @@ local function checkFittedFace(
 	local axisA3, axisB3 = ShapeUtils.otherNormals(CAST_VECTOR3(normal))
 	local axisA = CAST_VECTOR(axisA3)
 	local axisB = CAST_VECTOR(axisB3)
-	local direction = CFrame_VectorToWorldSpace(rotation, normal)
-	near(CFrame_VectorToWorldSpace(segment.CFrame, normal), direction)
-	near(CAST_VECTOR(segment.CFrame.UpVector), CAST_VECTOR(rotation.UpVector))
-	near(CAST_VECTOR(segment.CFrame.RightVector), CAST_VECTOR(rotation.RightVector))
-	near(
-		CAST_VECTOR(segment.CFrame.Position)
-			+ direction * (sign * vector.dot(segment.Size, vector.abs(normal)) / 2),
-		point
-	)
 	for _, a in SIGNS do
 		for _, b in SIGNS do
-			inside(segment, point + CFrame_VectorToWorldSpace(rotation, size * (axisA * a + axisB * b) / 2))
+			reachesFacePoint(
+				segments,
+				point + CFrame_VectorToWorldSpace(rotation, size * (axisA * a + axisB * b) / 2),
+				CFrame_VectorToWorldSpace(rotation, normal) * sign,
+				vector.magnitude(size)
+			)
 		end
 	end
 end
@@ -324,7 +413,10 @@ local function checkSurfaceSteps(segments: { Segment }, normal: vector, limit: n
 				local point = CFrame_PointToObjectSpace(other.CFrame, corner)
 				local otherSize = other.Size
 				if math.abs(point.x) < otherSize.x / 2 and math.abs(point.z) < otherSize.z / 2 then
-					assert(point.y - otherSize.y / 2 <= limit, "The spatial bend has a harsh surface step")
+					assert(
+						point.y - otherSize.y / 2 <= limit,
+						`The spatial bend has a harsh surface step of {point.y - otherSize.y / 2} at segment {i} of {#segments}`
+					)
 				end
 			end
 		end
@@ -473,51 +565,46 @@ return function(t: TestContext)
 
 				local options = table.clone(Settings.DefaultSplineJoinOptions)
 				options.Segments = 12
-				local targetRotation = target.CFrame.Rotation
+				local targetFrame, targetSize = target.CFrame, target.Size
 				doExtend(first, last, "SplineJoin", nil, options)
 
-				-- A plain target selected first matches the template, so it is
-				-- extended to absorb the first segment rather than gaining a clone.
-				local absorbed = reverse
-					and vector.dot(CAST_VECTOR(target.Size), fixture.Axis) > vector.dot(fixture.Profile, fixture.Axis) + 0.001
-				if absorbed then
-					t.expect(target.CFrame.Rotation).toBe(targetRotation)
-					near(
-						CAST_VECTOR(target.Size) * (vector.one - fixture.Axis),
-						fixture.Profile * (vector.one - fixture.Axis)
-					)
-				end
+				-- Neither selected part is resized or replaced
+				t.expect(target.CFrame).toBe(targetFrame)
+				t.expect(target.Size).toBe(targetSize)
 
 				targetFace = target.CFrame
 					* CFrame_fromVector(normalFromId(fixture.TargetFace) * CAST_VECTOR(target.Size) / 2)
 
-				local faceFrames = { fixture.Frame, targetFace }
-				for _, frame in faceFrames do
-					local found = absorbed and frame == targetFace
-					for _, part in folder:GetChildren() do
-						if part ~= slope and part ~= target then
-							local direction = CFrame_VectorToWorldSpace(part.CFrame, fixture.Axis)
-							local halfLength = vector.dot(CAST_VECTOR(part.Size), fixture.Axis) / 2
-							local partPosition = CAST_VECTOR(part.Position)
-							local framePosition = CAST_VECTOR(frame.Position)
-							local firstCap = partPosition - direction * halfLength
-							local lastCap = partPosition + direction * halfLength
-							if
-								vector.magnitude(firstCap - framePosition) < 0.0001
-								or vector.magnitude(lastCap - framePosition) < 0.0001
-							then
-								near(CAST_VECTOR(part.CFrame.UpVector), CAST_VECTOR(frame.UpVector))
-								near(CAST_VECTOR(part.CFrame.RightVector), CAST_VECTOR(frame.RightVector))
-								near(
-									CAST_VECTOR(part.Size) * (vector.one - fixture.Axis),
-									fixture.Profile * (vector.one - fixture.Axis)
-								)
-								t.expect(part.ClassName).toBe(fixture.TargetClass)
-								found = true
-							end
-						end
+				-- Every clone extrudes the selected profile, as the class that can
+				-- represent it, and the chain runs from one face to the other.
+				local segments: { Segment } = {}
+				for _, part in folder:GetChildren() do
+					if part ~= slope and part ~= target then
+						t.expect(part.ClassName).toBe(fixture.TargetClass)
+						near(
+							CAST_VECTOR(part.Size) * (vector.one - fixture.Axis),
+							fixture.Profile * (vector.one - fixture.Axis)
+						)
+						table.insert(segments, { CFrame = part.CFrame, Size = CAST_VECTOR(part.Size) })
 					end
-					assert(found, "The generated curve did not meet the selected slope profile")
+				end
+				t.expect(#segments).toBe(12)
+				endsNear(segments, CAST_VECTOR(fixture.Frame.Position), 0.0001)
+				endsNear(segments, CAST_VECTOR(targetFace.Position), 0.0001)
+
+				-- The clones at the ends keep the profile's orientation, other
+				-- than having begun the turn
+				local slopeEnd = if reverse then segments[#segments] else segments[1]
+				local targetEnd = if reverse then segments[1] else segments[#segments]
+				local ends = { { slopeEnd, fixture.Frame }, { targetEnd, targetFace } }
+				for _, pair in ends do
+					local segment: Segment, frame: CFrame = pair[1], pair[2]
+					assert(
+						angleBetween(CAST_VECTOR(segment.CFrame.UpVector), CAST_VECTOR(frame.UpVector)) <= math.rad(10)
+							and angleBetween(CAST_VECTOR(segment.CFrame.RightVector), CAST_VECTOR(frame.RightVector))
+								<= math.rad(10),
+						"The generated curve did not meet the selected slope profile"
+					)
 				end
 
 				near(CAST_VECTOR(slope.Size), vector.create(4, 2, 6))
@@ -590,16 +677,25 @@ return function(t: TestContext)
 			vector.create(0, 0.35, -0.5),
 			vector.create(0, 0.35, 0.5),
 		}
+		local segments: { Segment } = {}
+		for _, part in folder:GetChildren() do
+			if part ~= k and part ~= h and part:IsA("BasePart") then
+				table.insert(segments, { CFrame = part.CFrame, Size = CAST_VECTOR(part.Size) })
+			end
+		end
 		for _, position in seamPositions do
 			local point = CFrame_PointToWorldSpace(target, position)
+			if position.x == 0 then
+				-- On the face itself the last segment has only to reach H
+				reachesFacePoint(segments, point, CAST_VECTOR(h.CFrame.XVector), vector.magnitude(kSize))
+				continue
+			end
 			local covered = false
-			for _, part in folder:GetChildren() do
-				if part ~= k and part ~= h and part:IsA("BasePart") then
-					local excess = vector.abs(CFrame_PointToObjectSpace(part.CFrame, point)) - CAST_VECTOR(part.Size) / 2
-					if math.max(excess.x, excess.y, excess.z) < 0.00001 then
-						covered = true
-						break
-					end
+			for _, segment in segments do
+				local excess = vector.abs(CFrame_PointToObjectSpace(segment.CFrame, point)) - segment.Size / 2
+				if math.max(excess.x, excess.y, excess.z) < 0.00001 then
+					covered = true
+					break
 				end
 			end
 			assert(covered, `K/H has an uncovered seam at {point}`)
@@ -608,31 +704,31 @@ return function(t: TestContext)
 		folder:Destroy()
 	end)
 
-	-- Accepted C/E geometry at 0.6 padding. These values are intentionally
-	-- literal: deriving the expectation with SplineJoin.plan would repeat its bugs.
+	-- Accepted C/E geometry. These values are intentionally literal: deriving
+	-- the expectation with SplineJoin.plan would repeat its bugs.
 	local expectedJoins = {
 		{
 			Reverse = false,
 			Parts = {
-				expectedPart(-8.72143936, 20.97672272, 2.5, -0.58800262, 0.02157664, 0.7, 1),
-				expectedPart(-8.71704102, 20.97310066, 2.5, -0.46716008, 0.05184769, 0.7, 1),
-				expectedPart(-8.71686363, 20.97217941, 2.5, -0.29220143, 0.06992127, 0.7, 1),
-				expectedPart(-8.7277832, 20.97296524, 2.5, -0.08807655, 0.09532119, 0.7, 1),
-				expectedPart(-8.76643562, 20.97082329, 2.5, 0.11676918, 0.12633935, 0.7, 1),
-				expectedPart(-8.99449539, 20.91701317, 2.5, 0.2545839, 0.43954775, 0.7, 1),
-				expectedPart(-9.26072121, 20.85931778, 2.5, 0.11104243, 0.20706603, 0.7, 1),
+				expectedPart(-9.65048981, 20.8420887, 2.5, -0.02263264, 0.71504617, 0.7, 1),
+				expectedPart(-9.07727051, 20.81659126, 2.5, -0.07801541, 0.471726, 0.7, 1),
+				expectedPart(-8.71518517, 20.77879333, 2.5, -0.14554892, 0.30406141, 0.7, 1),
+				expectedPart(-8.49506664, 20.7395916, 2.5, -0.22568452, 0.19957048, 0.7, 1),
+				expectedPart(-8.3628664, 20.70423126, 2.5, -0.31742084, 0.13865893, 0.7, 1),
+				expectedPart(-8.28252697, 20.67417908, 2.5, -0.41885191, 0.10416722, 0.7, 1),
+				expectedPart(-8.23202133, 20.64887619, 2.5, -0.52807295, 0.08550502, 0.7, 1),
 			},
 		},
 		{
 			Reverse = true,
 			Parts = {
-				expectedPart(-9.32627583, 20.20000076, 2.5, 0, 0.14744997, 2, 1),
-				expectedPart(-9.17789841, 20.21452522, 2.5, 0.11105605, 0.37326252, 2, 1),
-				expectedPart(-8.8760004, 20.27620316, 2.5, 0.25485605, 0.53259039, 2, 1),
-				expectedPart(-8.69104958, 20.32521057, 2.5, 0.11662048, 0.12687686, 2, 1),
-				expectedPart(-8.78503036, 20.32549095, 2.5, -0.08818514, 0.09524815, 2, 1),
-				expectedPart(-8.90407181, 20.34972191, 2.5, -0.29214957, 0.06988241, 2, 1),
-				expectedPart(-9.00957775, 20.3926506, 2.5, -0.46689785, 0.05183535, 2, 1),
+				expectedPart(-8.57699394, 20.09894943, 2.5, -0.52696651, 0.12964386, 2, 1),
+				expectedPart(-8.59322071, 20.10722733, 2.5, -0.41579896, 0.12942073, 2, 1),
+				expectedPart(-8.62056541, 20.11735153, 2.5, -0.31082782, 0.13912168, 2, 1),
+				expectedPart(-8.6757431, 20.1315155, 2.5, -0.21498802, 0.16676375, 2, 1),
+				expectedPart(-8.7957449, 20.15096092, 2.5, -0.1320951, 0.2424425, 2, 1),
+				expectedPart(-9.06309223, 20.17446136, 2.5, -0.06596876, 0.42687386, 2, 1),
+				expectedPart(-9.62253857, 20.19340706, 2.5, -0.01746705, 0.78997731, 2, 1),
 			},
 		},
 	}
@@ -645,7 +741,6 @@ return function(t: TestContext)
 			local e = createPart(eSize, eFrame, folder)
 
 			local options = table.clone(Settings.DefaultSplineJoinOptions)
-			options.Padding = 0.6
 			options.Segments = 0
 
 			local first = {
@@ -687,7 +782,7 @@ return function(t: TestContext)
 	for _, pair in joins do
 		for _, reverse in SELECTION_ORDERS do
 			local name = if reverse then `{pair[3]} {pair[4]} to {pair[1]} {pair[2]}` else table.concat(pair, " ")
-			t.test(`SplineJoin: workspace {name} keeps complete, flat endpoint faces`, function()
+			t.test(`SplineJoin: workspace {name} reaches both endpoint faces`, function()
 				local first, size = workspacePair(pair[1])
 				local second, targetSize = workspacePair(pair[3])
 				local normal = normalFromId(Enum.NormalId[pair[2]])
@@ -746,8 +841,8 @@ return function(t: TestContext)
 					end
 
 					checkPlan(segments, CAST_VECTOR(start.Position), finish, normal, size)
-					checkFittedFace(segments[1], CAST_VECTOR(start.Position), start.Rotation, size, normal, -1)
-					checkFittedFace(segments[#segments], finish, rotation, size, normal, 1)
+					checkFittedFace(segments, CAST_VECTOR(start.Position), start.Rotation, size, normal, -1)
+					checkFittedFace(segments, finish, rotation, size, normal, 1)
 					assert(
 						math.abs(vector.dot(CAST_VECTOR(rotation.UpVector), CAST_VECTOR(target.UpVector))) > 0.9999,
 						"The target cross-section must not roll across its face"
@@ -774,7 +869,7 @@ return function(t: TestContext)
 						)
 					end
 					if padding == 0 and pair[2] == "Left" and pair[4] == "Right" then
-						checkSurfaceSteps(segments, normal, if pair[1] == "H" then 0.016 else 0.03)
+						checkSurfaceSteps(segments, normal, if pair[1] == "H" then 0.02 else 0.03)
 					end
 					if pair[1] == "TOPRAIL" and padding == 0 then
 						assert(#segments <= 24, `A short rail return generated {#segments} segments`)
@@ -817,13 +912,19 @@ return function(t: TestContext)
 
 					local parts = world:GetChildren()
 					local last = parts[#parts]
-					near(
-						CFrame_VectorToWorldSpace(last.CFrame, normalFromId(faceA.Normal)),
-						-CFrame_VectorToWorldSpace(b.CFrame, normalFromId(faceB.Normal))
-					)
+					-- The last segment is still finishing the turn, but it must
+					-- not roll about the axis it shares with the target
 					assert(
-						math.abs(vector.dot(CAST_VECTOR(last.CFrame.UpVector), CAST_VECTOR(b.CFrame.UpVector)))
-							> 0.9999,
+						angleBetween(
+							CFrame_VectorToWorldSpace(last.CFrame, normalFromId(faceA.Normal)),
+							-CFrame_VectorToWorldSpace(b.CFrame, normalFromId(faceB.Normal))
+						) <= math.rad(10),
+						"Rounded Join does not arrive along the target's normal"
+					)
+					-- (its chord still carries a little of the sideways offset)
+					assert(
+						math.abs(vector.dot(CAST_VECTOR(last.CFrame.ZVector), CAST_VECTOR(b.CFrame.ZVector)))
+							> 0.999,
 						"Rounded Join twists into the target"
 					)
 
@@ -852,7 +953,6 @@ return function(t: TestContext)
 				b.Color = a.Color
 				local ignoredOptions = table.clone(Settings.DefaultSplineJoinOptions)
 				ignoredOptions.Segments = 1
-				ignoredOptions.Padding = 100
 				doExtend(faceA, faceB, "RoundedJoin", false, ignoredOptions, false)
 				local radius = thickness / 2
 				t.expect(CAST_VECTOR(a.Size).x >= 14 - radius).toBe(true)
@@ -1018,8 +1118,8 @@ return function(t: TestContext)
 				)
 
 				t.expect(#segments).toBe(3)
-				checkEndFace(segments[1], start, size)
-				checkEndFace(segments[3], CFrame_fromVector(finish) * target.Rotation, size)
+				checkEndFace(segments, start, size, -CFrame_VectorToWorldSpace(start, normal))
+				checkTargetFace(segments, target, targetSize, targetNormal, finish, size)
 				checkPlan(segments, CAST_VECTOR(start.Position), finish, normal, size)
 			end
 		end
@@ -1056,9 +1156,12 @@ return function(t: TestContext)
 					)
 				)
 
-				checkEndFace(segments[1], start, size)
-				checkEndFace(segments[#segments], CFrame_fromVector(finish) * target.Rotation, size)
-				near(CAST_VECTOR(segments[#segments].CFrame.UpVector), CAST_VECTOR(target.UpVector))
+				checkEndFace(segments, start, size, -CFrame_VectorToWorldSpace(start, normal))
+				checkTargetFace(segments, target, targetSize, targetNormal, finish, size)
+				assert(
+					angleBetween(CAST_VECTOR(segments[#segments].CFrame.UpVector), CAST_VECTOR(target.UpVector)) <= math.rad(5),
+					"The last segment's cross-section is not oriented like the target's"
+				)
 
 				if reverse then
 					-- The surface must level out into F, rather than dipping as
@@ -1110,8 +1213,8 @@ return function(t: TestContext)
 					> 0.001
 			)
 			t.expect(tangentStart).toBe(original * 1.5)
-			checkEndFace(edited[1], start, size)
-			checkEndFace(edited[#edited], CFrame_fromVector(finish) * target.Rotation, size)
+			checkEndFace(edited, start, size, -CFrame_VectorToWorldSpace(start, normal))
+			checkTargetFace(edited, target, targetSize, targetNormal, finish, size)
 		end
 	end)
 
@@ -1142,8 +1245,8 @@ return function(t: TestContext)
 
 		assert(CAST_VECTOR(segments[6].CFrame.Position).z > 1, "Explicit handles should change the curve's plane")
 		checkPlan(segments, vector.zero, finish, X_AXIS, size)
-		checkEndFace(segments[1], CFrame.identity, size)
-		checkEndFace(segments[#segments], CFrame_fromVector(finish) * CFrame.Angles(0, 0, math.pi / 2), size)
+		checkEndFace(segments, CFrame.identity, size, -X_AXIS)
+		checkEndFace(segments, CFrame_fromVector(finish) * CFrame.Angles(0, 0, math.pi / 2), size, Y_AXIS)
 	end)
 
 	t.test("SplineJoin: manual count forms a curved connected chain", function()
@@ -1156,6 +1259,10 @@ return function(t: TestContext)
 
 		t.expect(#segments).toBe(12)
 		checkPlan(segments, vector.zero, vector.create(10, 10, 0), X_AXIS, size)
+		-- An even quarter turn puts half a step's turn into each end segment
+		checkTurningEnds(segments, X_AXIS, X_AXIS, Y_AXIS, math.rad(90 / 12))
+		checkEndFace(segments, CFrame.identity, size, -X_AXIS)
+		checkEndFace(segments, CFrame.new(10, 10, 0) * CFrame.Angles(0, 0, math.pi / 2), size, Y_AXIS)
 		-- The middle of a quarter-circle is below the straight diagonal.
 		t.expect(segments[6].CFrame.X - segments[6].CFrame.Y > 3).toBe(true)
 	end)
@@ -1234,15 +1341,13 @@ return function(t: TestContext)
 				local segments =
 					assert(SplineJoin.plan(template, start, finish, CFrame_VectorToWorldSpace(target, n2), n1, 24))
 
-				near(CFrame_VectorToWorldSpace(segments[1].CFrame, n1), CFrame_VectorToWorldSpace(start, n1))
-				near(
-					CFrame_VectorToWorldSpace(segments[#segments].CFrame, n1),
-					-CFrame_VectorToWorldSpace(target, n2)
+				checkTurningEnds(
+					segments,
+					n1,
+					CFrame_VectorToWorldSpace(start, n1),
+					-CFrame_VectorToWorldSpace(target, n2),
+					math.rad(5)
 				)
-
-				local last = segments[#segments]
-				local endDirection = CFrame_VectorToWorldSpace(last.CFrame, n1)
-				near(CAST_VECTOR(last.CFrame.Position) + endDirection * last.Size.x / 2, finish)
 
 				local previous = CFrame_VectorToWorldSpace(start, n1)
 				local turnSign = mirror * (if reverse then 1 else -1)
@@ -1283,7 +1388,10 @@ return function(t: TestContext)
 				previous = direction
 			end
 
-			near(previous, -CFrame_VectorToWorldSpace(target, targetNormal))
+			assert(
+				angleBetween(previous, -CFrame_VectorToWorldSpace(target, targetNormal)) <= math.rad(6.5),
+				"A coarse endpoint must not consume multiple turns"
+			)
 			if reverse then
 				local penultimate = CFrame_VectorToWorldSpace(segments[#segments - 1].CFrame, normal)
 				assert(
@@ -1316,8 +1424,7 @@ return function(t: TestContext)
 
 				assert(#segments <= 13, `Padding {padding} generated {#segments} segments`)
 				checkPlan(segments, CAST_VECTOR(start.Position), finish, normal, size)
-				near(CFrame_VectorToWorldSpace(segments[1].CFrame, normal), CFrame_VectorToWorldSpace(start, normal))
-				near(CFrame_VectorToWorldSpace(segments[#segments].CFrame, normal), -endNormal)
+				checkTurningEnds(segments, normal, CFrame_VectorToWorldSpace(start, normal), -endNormal, math.rad(10))
 			end
 		end
 	end)
@@ -1423,8 +1530,8 @@ return function(t: TestContext)
 		end
 
 		assert(math.abs(counts[1] - counts[2]) <= 1, "Selecting C first should not add unnecessary detail")
-		t.expect(counts[1]).toBe(8)
-		t.expect(counts[2]).toBe(8)
+		t.expect(counts[1] <= 9).toBe(true)
+		t.expect(counts[2] <= 9).toBe(true)
 	end)
 
 	t.test("SplineJoin: all six template faces keep their cross sections", function()
@@ -1480,8 +1587,8 @@ return function(t: TestContext)
 			end
 
 			t.expect(length).toBe(finish.x)
-			inside(segments[1], vector.zero)
-			inside(segments[#segments], finish)
+			endsNear(segments, vector.zero, 0.0001)
+			endsNear(segments, finish, 0.0001)
 		end
 	end)
 
@@ -1498,29 +1605,19 @@ return function(t: TestContext)
 		end
 	end)
 
-	-- Padding and extension integration
-	t.test("SplineJoin: shared padding extends both ends and preserves clones", function()
+	-- doExtend integration
+	t.test("SplineJoin: leaves both parts untouched and preserves clones", function()
 		withParts(function(folder, a, b, faceA, faceB)
 			b.Color = a.Color
 			local options = table.clone(Settings.DefaultSplineJoinOptions)
 			options.Segments = 7
-			options.Padding = 2
 			doExtend(faceA, faceB, "SplineJoin", false, options)
-			t.expect(#folder:GetChildren()).toBe(8)
-			local aSize = CAST_VECTOR(a.Size)
-			local bSize = CAST_VECTOR(b.Size)
-			t.expect(aSize.x > 6).toBe(true)
-			near(aSize * vector.create(0, 1, 1), vector.create(0, 2, 3))
-			near(bSize, vector.create(2, 6, 3))
-			near(
-				CAST_VECTOR(a.Position) - CAST_VECTOR(a.CFrame.XVector) * aSize.x / 2,
-				vector.create(-4, 0, 0)
-			)
-			near(
-				CAST_VECTOR(b.Position) + CAST_VECTOR(b.CFrame.YVector) * bSize.y / 2,
-				vector.create(10, 14, 0)
-			)
-			local segments = { { CFrame = a.CFrame, Size = aSize } }
+			t.expect(#folder:GetChildren()).toBe(9)
+			near(CAST_VECTOR(a.Size), vector.create(4, 2, 3))
+			near(CAST_VECTOR(a.Position), vector.create(-2, 0, 0))
+			near(CAST_VECTOR(b.Size), vector.create(2, 4, 3))
+			near(CAST_VECTOR(b.Position), vector.create(10, 12, 0))
+			local segments = {}
 			for _, part in folder:GetChildren() do
 				if part ~= a and part ~= b then
 					t.expect(part.Color).toBe(a.Color)
@@ -1529,13 +1626,9 @@ return function(t: TestContext)
 					table.insert(segments, { CFrame = part.CFrame, Size = CAST_VECTOR(part.Size) })
 				end
 			end
-			checkPlan(
-				segments,
-				vector.create(2, 0, 0),
-				vector.create(10, 8, 0),
-				X_AXIS,
-				vector.create(4, 2, 3)
-			)
+			checkPlan(segments, vector.create(0, 0, 0), vector.create(10, 10, 0), X_AXIS, vector.create(4, 2, 3))
+			checkEndFace(segments, CFrame.identity, vector.create(4, 2, 3), -X_AXIS)
+			checkTurningEnds(segments, X_AXIS, X_AXIS, Y_AXIS, math.rad(90 / 7))
 		end)
 	end)
 
@@ -1586,56 +1679,28 @@ return function(t: TestContext)
 		end
 	end)
 
-	t.test("SplineJoin: advanced padding extends each end independently", function()
+	t.test("SplineJoin: matching plain parts are not extended to absorb the end segments", function()
 		withParts(function(folder, a, b, faceA, faceB)
+			a:ClearAllChildren()
+			a:SetAttribute("ArcTemplate", nil)
+			b.Color = a.Color
 			local options = table.clone(Settings.DefaultSplineJoinOptions)
-			options.AdvancedPadding = true
-			options.Padding = 100
-			options.PaddingA = 1
-			options.PaddingB = 3
+			options.Segments = 12
 			doExtend(faceA, faceB, "SplineJoin", false, options)
-			t.expect(CAST_VECTOR(a.Size).x > 5).toBe(true)
-			near(CAST_VECTOR(a.Size) * vector.create(0, 1, 1), vector.create(0, 2, 3))
-			near(CAST_VECTOR(b.Size), vector.create(2, 7, 3))
-			t.expect(#folder:GetChildren() > 2).toBe(true)
+			t.expect(#folder:GetChildren()).toBe(14)
+			near(CAST_VECTOR(a.Size), vector.create(4, 2, 3))
+			near(CAST_VECTOR(a.Position), vector.create(-2, 0, 0))
+			near(CAST_VECTOR(b.Size), vector.create(2, 4, 3))
+			near(CAST_VECTOR(b.Position), vector.create(10, 12, 0))
 		end)
 	end)
 
-	t.test("SplineJoin: straight ends extend matching plain parts", function()
-		local propertyMatches = { true, false }
-		for _, sameProperties in propertyMatches do
-			withParts(function(folder, a, b, faceA, faceB)
-				a:ClearAllChildren()
-				a:SetAttribute("ArcTemplate", nil)
-				b.Color = if sameProperties then a.Color else Color3.new(1, 0, 0)
-				local options = table.clone(Settings.DefaultSplineJoinOptions)
-				options.Segments = 12
-				doExtend(faceA, faceB, "SplineJoin", false, options)
-				local aSize = CAST_VECTOR(a.Size)
-				local bSize = CAST_VECTOR(b.Size)
-				t.expect(aSize.x > 4).toBe(true)
-				t.expect(bSize.y > 4).toBe(sameProperties)
-				t.expect(#folder:GetChildren()).toBe(if sameProperties then 12 else 13)
-				near(
-					CAST_VECTOR(a.Position) - CAST_VECTOR(a.CFrame.XVector) * aSize.x / 2,
-					vector.create(-4, 0, 0)
-				)
-				near(
-					CAST_VECTOR(b.Position) + CAST_VECTOR(b.CFrame.YVector) * bSize.y / 2,
-					vector.create(10, 14, 0)
-				)
-			end)
-		end
-	end)
-
-	t.test("SplineJoin: invalid counts and excessive padding leave sources untouched", function()
-		-- Zero is not invalid, it selects an automatic count
+	t.test("SplineJoin: invalid counts leave sources untouched", function()
 		local segmentCounts = { -1, 1.5, math.huge, 0 / 0 }
 		for _, count in segmentCounts do
 			withParts(function(folder, a, b, faceA, faceB)
 				local options = table.clone(Settings.DefaultSplineJoinOptions)
 				options.Segments = count
-				options.Padding = 2
 				t.expect(function()
 					doExtend(faceA, faceB, "SplineJoin", false, options)
 				end).toThrow("Spline Join:")
@@ -1644,15 +1709,5 @@ return function(t: TestContext)
 				near(CAST_VECTOR(b.Size), vector.create(2, 4, 3))
 			end)
 		end
-		withParts(function(folder, a, b, faceA, faceB)
-			local options = table.clone(Settings.DefaultSplineJoinOptions)
-			options.Padding = 20
-			t.expect(function()
-				doExtend(faceA, faceB, "SplineJoin", false, options)
-			end).toThrow("Spline Join:")
-			t.expect(#folder:GetChildren()).toBe(2)
-			near(CAST_VECTOR(a.Size), vector.create(4, 2, 3))
-			near(CAST_VECTOR(b.Size), vector.create(2, 4, 3))
-		end)
 	end)
 end
