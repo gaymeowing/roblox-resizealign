@@ -497,8 +497,10 @@ local function createSplineJoin(faceA: Face, faceB: Face, segmentCount: number?,
 		resizePart(faceB, paddingB)
 	end
 
+	local parent = objectA.Parent
+
 	for _, part in parts do
-		part.Parent = faceA.Object.Parent
+		part.Parent = parent
 	end
 
 	if recording then
