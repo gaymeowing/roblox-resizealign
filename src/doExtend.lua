@@ -17,6 +17,9 @@ local otherNormals = ShapeUtils.otherNormals
 local isWedgeShape = ShapeUtils.isWedgeShape
 local isCornerWedgeShape = ShapeUtils.isCornerWedgeShape
 
+local WEDGE_PART = Instance.new("Part")
+WEDGE_PART.Shape = Enum.PartType.Wedge
+
 export type Face = {
 	Object: BasePart,
 	Normal: Enum.NormalId,
@@ -433,7 +436,7 @@ local function createSplineJoin(faceA: Face, faceB: Face, segmentCount: number?,
 	local template = faceA.Object
 
 	if extrusionClass then
-		local extrusion = if extrusionClass == "WedgePart" then Instance.new("WedgePart") else Instance.new("Part")
+		local extrusion = if extrusionClass == "WedgePart" then WEDGE_PART:Clone() else Instance.new("Part")
 		copyPartProps(template, extrusion)
 		extrusion.Name = template.Name
 		extrusion.Size = profileA :: any
