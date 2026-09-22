@@ -48,7 +48,6 @@ local kNearParallelSinAngle = 0.01
 local kMaxExtension = 2048
 local kMaxExtensionFactor = 8
 
-
 -- The type solver does not know that Vector3 and vector have the same runtime representation.
 local function CAST_VECTOR(value: Vector3): vector
 	return value :: any
@@ -391,10 +390,16 @@ local function getSplineFace(face: Face): (CFrame, vector, vector, ("Part" | "We
 			width = math.sqrt(size.Y * size.Y + size.Z * size.Z)
 		end
 
-		return CFrame.fromMatrix(point, normal, up), vector.create(depth, height, width), vector.create(1, 0, 0), "WedgePart"
+		return CFrame.fromMatrix(point, normal, up),
+			vector.create(depth, height, width),
+			vector.create(1, 0, 0),
+			"WedgePart"
 	elseif face.IsWedge then
 		local width = math.sqrt(size.Y * size.Y + size.Z * size.Z)
-		return CFrame.fromMatrix(point, cf.XVector, normal), vector.create(size.X, depth, width), vector.create(0, 1, 0), "Part"
+		return CFrame.fromMatrix(point, cf.XVector, normal),
+			vector.create(size.X, depth, width),
+			vector.create(0, 1, 0),
+			"Part"
 	end
 	return CFrame.new(point) * cf.Rotation, size :: any, Vector3.fromNormalId(face.Normal) :: any, nil
 end
