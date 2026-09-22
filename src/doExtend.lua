@@ -48,6 +48,28 @@ local kNearParallelSinAngle = 0.01
 local kMaxExtension = 2048
 local kMaxExtensionFactor = 8
 
+
+-- The type solver does not know that Vector3 and vector have the same runtime representation.
+local function CAST_VECTOR(value: Vector3): vector
+	return value :: any
+end
+
+local function CAST_VECTOR3(value: vector): Vector3
+	return value :: any
+end
+
+local function CFrame_VectorToWorldSpace(cframe: CFrame, value: vector): vector
+	return CAST_VECTOR(cframe:VectorToWorldSpace(CAST_VECTOR3(value)))
+end
+
+local function COLOR3_TO_VECTOR(color3: Color3): vector
+	return vector.create(color3.R, color3.G, color3.B)
+end
+
+local function VECTOR_TO_COLOR3(vec: vector): Color3
+	return Color3.new(vec.x, vec.y, vec.z)
+end
+
 local function getFacePoints(face: Face)
 	local hsize = face.Object.Size / 2
 	local cf = face.Object.CFrame
@@ -349,11 +371,12 @@ end
 
 -- Slopes use the same rectangular/triangular extrusion profiles as resizePart.
 -- Their selected normal is not one of the original part's cardinal axes.
-local function getSplineFace(face: Face): (CFrame, Vector3, Vector3, ("Part" | "WedgePart")?)
+local function getSplineFace(face: Face): (CFrame, vector, vector, ("Part" | "WedgePart")?)
 	local part = face.Object
 	local cf = part.CFrame
 	local size = part.Size
 	local point, normal = getBasis(face)
+	local depth = vector.dot(vector.abs(cf:VectorToObjectSpace(normal) :: any), size :: any)
 
 	if face.CornerWedgeSide then
 		local up, height, width
@@ -363,18 +386,17 @@ local function getSplineFace(face: Face): (CFrame, Vector3, Vector3, ("Part" | "
 			up = (cf.XVector * size.X + cf.YVector * size.Y) / height
 			width = size.Z
 		else
-			up, height = -cf.XVector, size.X
+			height = size.X
+			up = -cf.XVector
 			width = math.sqrt(size.Y * size.Y + size.Z * size.Z)
 		end
 
-		local depth = cf:VectorToObjectSpace(normal):Abs():Dot(size)
-		return CFrame.fromMatrix(point, normal, up), Vector3.new(depth, height, width), Vector3.xAxis, "WedgePart"
+		return CFrame.fromMatrix(point, normal, up), vector.create(depth, height, width), vector.create(1, 0, 0), "WedgePart"
 	elseif face.IsWedge then
 		local width = math.sqrt(size.Y * size.Y + size.Z * size.Z)
-		local depth = cf:VectorToObjectSpace(normal):Abs():Dot(size)
-		return CFrame.fromMatrix(point, cf.XVector, normal), Vector3.new(size.X, depth, width), Vector3.yAxis, "Part"
+		return CFrame.fromMatrix(point, cf.XVector, normal), vector.create(size.X, depth, width), vector.create(0, 1, 0), "Part"
 	end
-	return CFrame.new(point) * cf.Rotation, size, Vector3.fromNormalId(face.Normal), nil
+	return CFrame.new(point) * cf.Rotation, size :: any, Vector3.fromNormalId(face.Normal) :: any, nil
 end
 
 -- Rounded Join passes how far to resize each part before joining them, which
@@ -387,15 +409,15 @@ local function createSplineJoin(faceA: Face, faceB: Face, segmentCount: number?,
 
 	local frameA, profileA, localNormalA, extrusionClass = getSplineFace(faceA)
 	local frameB, profileB, localNormalB = getSplineFace(faceB)
-	local pointA = frameA.Position
-	local pointB = frameB.Position
-	local normalA = frameA:VectorToWorldSpace(localNormalA)
-	local normalB = frameB:VectorToWorldSpace(localNormalB)
+	local pointA = frameA.Position :: any
+	local pointB = frameB.Position :: any
+	local normalA = CFrame_VectorToWorldSpace(frameA, localNormalA)
+	local normalB = CFrame_VectorToWorldSpace(frameB, localNormalB)
 	local startPoint = pointA + normalA * paddingA
-	local startFrame = CFrame.new(startPoint) * frameA.Rotation
+	local startFrame = CFrame.new(startPoint :: any) * frameA.Rotation
 	local endPoint, surfaceOffset, targetRotation = SplineJoin.getTargetPoint(
 		startFrame,
-		CFrame.new(pointB + normalB * paddingB) * frameB.Rotation,
+		CFrame.new((pointB + normalB * paddingB) :: any) * frameB.Rotation,
 		profileA,
 		profileB,
 		localNormalA,
@@ -409,7 +431,7 @@ local function createSplineJoin(faceA: Face, faceB: Face, segmentCount: number?,
 		local extrusion = if extrusionClass == "WedgePart" then Instance.new("WedgePart") else Instance.new("Part")
 		copyPartProps(template, extrusion)
 		extrusion.Name = template.Name
-		extrusion.Size = profileA
+		extrusion.Size = profileA :: any
 		template = extrusion
 		temporaryTemplate = extrusion
 	end
@@ -436,20 +458,32 @@ local function createSplineJoin(faceA: Face, faceB: Face, segmentCount: number?,
 	-- Color and Transparency are the visual properties that can be blended, so
 	-- when the two parts differ in them, fade from one to the other along the
 	-- spline. Each segment takes the blend at its middle, measured by length.
-	local objectA, objectB = faceA.Object, faceB.Object
-	if objectA.Color ~= objectB.Color or objectA.Transparency ~= objectB.Transparency then
-		local lengthAxis = localNormalA:Abs()
+	local objectA = faceA.Object
+	local objectB = faceB.Object
+	local transparencyA = objectA.Transparency
+	local transparencyB = objectB.Transparency
+	local colorA = objectA.Color
+	local colorB = objectB.Color
+
+	if colorA ~= colorB or transparencyA ~= transparencyB then
+		local transparencyDiff = transparencyB - transparencyA
+		local lengthAxis = vector.abs(localNormalA)
 		local totalLength = 0
+
+		colorA = COLOR3_TO_VECTOR(colorA)
+		colorB = COLOR3_TO_VECTOR(colorB)
+
 		for _, part in parts do
-			totalLength += part.Size:Dot(lengthAxis)
+			totalLength += vector.dot(part.Size :: any, lengthAxis)
 		end
+
 		local coveredLength = 0
 		for _, part in parts do
-			local length = part.Size:Dot(lengthAxis)
+			local length = vector.dot(part.Size :: any, lengthAxis)
 			local alpha = (coveredLength + length / 2) / totalLength
 			coveredLength += length
-			part.Color = objectA.Color:Lerp(objectB.Color, alpha)
-			part.Transparency = objectA.Transparency + (objectB.Transparency - objectA.Transparency) * alpha
+			part.Color = VECTOR_TO_COLOR3(vector.lerp(colorA, colorB, alpha))
+			part.Transparency = math.lerp(transparencyA, transparencyDiff, alpha)
 		end
 	end
 
